@@ -2,7 +2,7 @@
 
 IMAGE="tonanuvem/sisprime-multi-endoscopia-frontend"
 CONTAINER="sisprime-multi-endoscopia-frontend"
-PORTA="3001"
+PORTA="8801"
 
 # Verificar se .env.local existe
 if [ ! -f ".env.local" ]; then

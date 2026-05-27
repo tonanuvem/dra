@@ -18,6 +18,6 @@ docker compose up -d --build
 echo ""
 echo "Serviços em execução:"
 echo "  Backend:  http://$IP:8802"
-echo "  Frontend: http://$IP:3001"
+echo "  Frontend: http://$IP:8801"
 echo ""
 echo "Para ver logs: docker compose logs -f"
