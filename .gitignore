@@ -43,6 +43,7 @@ outputs/
 tmp/
 temp/
 *.tmp
+.~c9_invoke_*
 
 # Credentials
 *.key
