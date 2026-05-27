@@ -83,7 +83,7 @@ export function useDashboardStats() {
     procedimentoDivergente: 0,
     pendentesRevisao: 0,
     valorRecuperar: 0,
-    statusDistribution: [] as { status: string; total: number; valor: number }[],
+    statusDistribution: [] as { status: string; total: number; valor: number; valorPago: number }[],
     // ── Filas TUSS ───────────────────────────────────────
     // Causa 1+3: código identificado mas sem histórico de preço
     tussCodigoSemHistorico: 0,
@@ -99,6 +99,7 @@ export function useDashboardStats() {
         let allRows: Array<{
           StatusCorrelacao: string | null
           ValorEstimado_TUSS: number | null
+          ValorLiberado_REPASSE: number | null
           MetodoMatch: string | null
           StatusTUSS: string | null
           CodigosTUSS_Esperados: string | null
@@ -109,7 +110,7 @@ export function useDashboardStats() {
         while (true) {
           const { data: batch, error } = await supabase
             .from(TABLE)
-            .select('StatusCorrelacao, ValorEstimado_TUSS, MetodoMatch, StatusTUSS, CodigosTUSS_Esperados')
+            .select('StatusCorrelacao, ValorEstimado_TUSS, ValorLiberado_REPASSE, MetodoMatch, StatusTUSS, CodigosTUSS_Esperados')
             .range(from, from + batchSize - 1)
 
           if (error || !batch || batch.length === 0) break
@@ -120,7 +121,7 @@ export function useDashboardStats() {
 
         if (allRows.length === 0) return
 
-        const byStatus: Record<string, { count: number; valor: number }> = {}
+        const byStatus: Record<string, { count: number; valor: number; valorPago: number }> = {}
         let pendentesRevisao      = 0
         let valorRecuperar        = 0
         let tussCodigoSemHistorico = 0  // Causa 1+3: código mapeado mas sem preço histórico
@@ -128,9 +129,10 @@ export function useDashboardStats() {
 
         for (const row of allRows) {
           const s = row.StatusCorrelacao ?? 'DESCONHECIDO'
-          if (!byStatus[s]) byStatus[s] = { count: 0, valor: 0 }
+          if (!byStatus[s]) byStatus[s] = { count: 0, valor: 0, valorPago: 0 }
           byStatus[s].count++
-          byStatus[s].valor += Number(row.ValorEstimado_TUSS ?? 0)
+          byStatus[s].valor     += Number(row.ValorEstimado_TUSS    ?? 0)
+          byStatus[s].valorPago += Number(row.ValorLiberado_REPASSE ?? 0)
 
           if (needsReview({
             StatusCorrelacao: row.StatusCorrelacao ?? undefined,
@@ -160,7 +162,7 @@ export function useDashboardStats() {
         }
 
         const dist = Object.entries(byStatus)
-          .map(([status, { count, valor }]) => ({ status, total: count, valor }))
+          .map(([status, { count, valor, valorPago }]) => ({ status, total: count, valor, valorPago }))
           .sort((a, b) => b.total - a.total)
 
         setStats({
