@@ -4848,13 +4848,29 @@ def main():
                     if st.button("🔄 Recarregar Dados no Supabase", type="secondary", help="Descarta dados anteriores e recarrega toda a tabela correlacao_endoscopia"):
                         try:
                             from supabase import create_client
-                            
+
                             # Configuração do Supabase
                             supabase_url = os.getenv("SUPABASE_URL")
-                            supabase_key = os.getenv("SUPABASE_KEY")
-                            
+                            # Prefere service_role (bypassa RLS); cai para anon com aviso
+                            supabase_key = (
+                                os.getenv("SUPABASE_SERVICE_KEY")
+                                or os.getenv("SUPABASE_KEY")
+                            )
+                            _usando_service_key = bool(os.getenv("SUPABASE_SERVICE_KEY"))
+
                             if not supabase_url or not supabase_key:
-                                st.error("❌ Variáveis SUPABASE_URL e SUPABASE_KEY não configuradas")
+                                st.error(
+                                    "❌ Variáveis de ambiente não configuradas. "
+                                    "Defina **SUPABASE_URL** e **SUPABASE_SERVICE_KEY** "
+                                    "(chave service_role do projeto Supabase)."
+                                )
+                            elif not _usando_service_key:
+                                st.error(
+                                    "❌ **SUPABASE_SERVICE_KEY** não configurada. "
+                                    "A chave `anon` não tem permissão para inserir dados (RLS). "
+                                    "Adicione a variável `SUPABASE_SERVICE_KEY` com a chave **service_role** "
+                                    "encontrada em: Supabase → Project Settings → API → service_role."
+                                )
                             else:
                                 with st.spinner("🔄 Conectando ao Supabase..."):
                                     supabase = create_client(supabase_url, supabase_key)
