@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import './globals.css'
-import { Sidebar } from '@/components/layout/Sidebar'
+import { AuthProvider } from '@/contexts/AuthContext'
+import { AuthGuard }    from '@/components/auth/AuthGuard'
+import { ClientLayout } from '@/components/layout/ClientLayout'
 
 export const metadata: Metadata = {
   title: 'Auditoria Endoscopia',
@@ -11,10 +13,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="pt-BR" className="h-full">
       <body className="h-full">
-        <Sidebar />
-        <main className="main-content min-h-screen p-6">
-          {children}
-        </main>
+        <AuthProvider>
+          <AuthGuard>
+            <ClientLayout>
+              {children}
+            </ClientLayout>
+          </AuthGuard>
+        </AuthProvider>
       </body>
     </html>
   )
