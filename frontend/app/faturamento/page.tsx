@@ -282,7 +282,7 @@ function RowDetailModal({
 // ─────────────────────────────────────────────────────────
 function FaturamentoContent() {
   const searchParams  = useSearchParams()
-  const tabParam      = (searchParams.get('tab') ?? 'downgrade') as TabType
+  const tabParam      = (searchParams.get('tab') ?? 'todos') as TabType
   const [activeTab, setActiveTab]         = useState<TabType>(tabParam)
   const [selected, setSelected]           = useState<Set<string>>(new Set())
   const [includeNegative, setIncludeNegative] = useState(false)
@@ -297,12 +297,12 @@ function FaturamentoContent() {
     data.map(row => ({ ...row, valorRecuperar: calcularValorRecuperar(row, activeTab) }))
   ), [data, activeTab])
 
-  // Auto-seleção: exclui negativos por padrão
+  // Auto-seleção: exclui negativos e nulos por padrão
   useMemo(() => {
     const next = new Set<string>()
     processedData.forEach(row => {
       const v = row.valorRecuperar
-      if (v !== null && (v > 0 || includeNegative)) next.add(row.ChaveCorrelacao)
+      if (v != null && isFinite(v) && (v > 0 || includeNegative)) next.add(row.ChaveCorrelacao)
     })
     setSelected(next)
   }, [processedData, includeNegative])
@@ -322,8 +322,15 @@ function FaturamentoContent() {
     )
 
   const selectedRows    = processedData.filter(r => selected.has(r.ChaveCorrelacao))
-  const totalSelecionado = selectedRows.reduce((acc, r) => acc + (r.valorRecuperar ?? 0), 0)
-  const negativos       = processedData.filter(r => (r.valorRecuperar ?? 0) < 0).length
+  const totalSelecionado = selectedRows.reduce((acc, r) => {
+    const v = r.valorRecuperar
+    if (v == null || !isFinite(v)) return acc
+    return acc + v
+  }, 0)
+  const negativos       = processedData.filter(r => {
+    const v = r.valorRecuperar
+    return v != null && isFinite(v) && v < 0
+  }).length
 
   const exportXLSX = useCallback(() => {
     const rows = selectedRows.map(r => ({
@@ -577,24 +584,32 @@ function FaturamentoContent() {
 // ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
+
+/** Converte qualquer valor vindo do Supabase em número ou null (nunca NaN) */
+function safeNum(v: unknown): number | null {
+  if (v == null) return null
+  const n = Number(v)
+  return isFinite(n) ? n : null
+}
+
 function calcularValorRecuperar(row: Correlacao, tab: TabType): number | null {
-  const estimado = row.ValorEstimado_TUSS
-  const recebido = row.ValorLiberado_REPASSE
+  const estimado = safeNum(row.ValorEstimado_TUSS)
+  const recebido = safeNum(row.ValorLiberado_REPASSE) ?? 0
 
   // Aba "Todos": calcula com base no StatusTUSS de cada linha
   if (tab === 'todos') {
     if (row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES') {
       if (estimado == null) return null
-      return estimado - (recebido ?? 0)
+      return estimado - recebido
     }
-    return estimado ?? null
+    return estimado // ausente + nao_faturado: valor total a recuperar é o estimado
   }
   if (tab === 'downgrade') {
     if (estimado == null) return null
-    return estimado - (recebido ?? 0)
+    return estimado - recebido
   }
-  if (tab === 'ausente')      return estimado ?? null
-  if (tab === 'nao_faturado') return estimado ?? null
+  if (tab === 'ausente')      return estimado
+  if (tab === 'nao_faturado') return estimado
   return null
 }
 
