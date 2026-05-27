@@ -4,6 +4,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: sisprime-multi-endoscopia-backend
+    env_file:
+      - .env
     ports:
       - "8802:8501"
     volumes:
@@ -19,7 +21,7 @@ services:
       dockerfile: Dockerfile
     container_name: sisprime-multi-endoscopia-frontend
     env_file:
-      - ./frontend/.env.local
+      - .env
     ports:
       - "8801:3000"
     restart: unless-stopped

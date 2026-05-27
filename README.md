@@ -4,6 +4,32 @@
 
 ---
 
+## 0. Configuração Inicial
+
+### Variáveis de Ambiente
+
+O projeto usa um arquivo `.env` **compartilhado** na raiz para configurar tanto o frontend quanto o backend:
+
+```bash
+# Copie o exemplo e preencha com suas credenciais
+cp .env.example .env
+```
+
+**Variáveis obrigatórias:**
+
+```env
+# Supabase (usado por frontend e backend)
+SUPABASE_URL=https://seu-projeto.supabase.co
+SUPABASE_KEY=sua_chave_publica
+
+# Backend
+PORT=8501
+```
+
+> **Nota:** O backend carrega automaticamente o `.env` da raiz. O frontend Next.js acessa as mesmas variáveis via `process.env.SUPABASE_URL` e `process.env.SUPABASE_KEY`.
+
+---
+
 ## 1. Propósito do Sistema
 
 O sistema recebe dois arquivos periódicos produzidos por fontes distintas e os **correlaciona automaticamente** para identificar discrepâncias de faturamento:

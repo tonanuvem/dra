@@ -32,6 +32,9 @@ from crewai import Agent, Task, Crew, Process, LLM
 # CONFIGURAÇÃO DE VARIÁVEIS DE AMBIENTE E LOG
 # =============================================================================
 
+# Carrega .env da raiz do projeto (compartilhado com frontend)
+load_dotenv(Path(__file__).parent.parent / ".env")
+# Fallback para .env local do backend
 load_dotenv()
 
 def _resolve_log_path() -> Path:
@@ -4603,7 +4606,7 @@ def main():
                     st.markdown("---")
 
                     with st.expander("🔍 Filtros", expanded=False):
-                        fcol1, fcol2, fcol3 = st.columns(3)
+                        fcol1, fcol2, fcol3, fcol4, fcol5 = st.columns(5)
 
                         convenios_disp = sorted(df_final.get("Convenio_PRODUCAO", pd.Series()).dropna().unique().tolist())
                         filtro_convenio = fcol1.multiselect(
@@ -4623,6 +4626,19 @@ def main():
                             placeholder="Todos",
                         )
 
+                        status_tuss_disp = sorted(df_final.get("StatusTUSS", pd.Series()).dropna().unique().tolist())
+                        filtro_status_tuss = fcol4.multiselect(
+                            "Status TUSS", status_tuss_disp,
+                            placeholder="Todos",
+                        )
+
+                        # Filtro de ValorEstimado_TUSS (com/sem valor)
+                        filtro_valor_est = fcol5.selectbox(
+                            "Valor Estimado",
+                            ["Todos", "Com Valor", "Sem Valor"],
+                            index=0,
+                        )
+
                     # Filtro com máscara booleana — sem copiar o DataFrame inteiro
                     # Seleção vazia = sem filtro (exibe tudo); coerente com placeholder="Todos"
                     _mask = pd.Series(True, index=df_final.index)
@@ -4632,6 +4648,13 @@ def main():
                         _mask &= df_final["StatusCorrelacao"].isin(filtro_status)
                     if "CodigoTUSS_REPASSE" in df_final.columns and filtro_tuss:
                         _mask &= df_final["CodigoTUSS_REPASSE"].isin(filtro_tuss)
+                    if "StatusTUSS" in df_final.columns and filtro_status_tuss:
+                        _mask &= df_final["StatusTUSS"].isin(filtro_status_tuss)
+                    if "ValorEstimado_TUSS" in df_final.columns and filtro_valor_est != "Todos":
+                        if filtro_valor_est == "Com Valor":
+                            _mask &= df_final["ValorEstimado_TUSS"].replace("", float("nan")).notna()
+                        else:  # Sem Valor
+                            _mask &= df_final["ValorEstimado_TUSS"].replace("", float("nan")).isna()
                     df_filtrado = df_final[_mask]
                     _n_filtrado = len(df_filtrado)
 
@@ -4703,6 +4726,12 @@ def main():
                         else:
                             df_display = df_filtrado
 
+                        # ── Reordenar colunas: pinadas primeiro ───────────────
+                        _colunas_pinadas = ["StatusCorrelacao", "CodigoTUSS_REPASSE", "StatusTUSS", "CodigosTUSS_Esperados"]
+                        _colunas_existentes = [c for c in _colunas_pinadas if c in df_display.columns]
+                        _colunas_restantes = [c for c in df_display.columns if c not in _colunas_pinadas]
+                        df_display = df_display[_colunas_existentes + _colunas_restantes]
+
                         # ── Camada 2: cache do style por combinação de filtro ─
                         # _build_style_df só reexecuta quando os filtros mudam;
                         # interações não relacionadas reutilizam o resultado cacheado
@@ -4710,6 +4739,8 @@ def main():
                             frozenset(filtro_convenio),
                             frozenset(filtro_status),
                             frozenset(filtro_tuss),
+                            frozenset(filtro_status_tuss),
+                            filtro_valor_est,
                         ))
                         _style_cache_key = f"corr_style_{_df_cache_key}_{_filter_hash}"
                         if _style_cache_key not in st.session_state:
@@ -4723,11 +4754,17 @@ def main():
                             df_display.style.apply(lambda _: _cached_style, axis=None),
                             use_container_width=True,
                             height=460,
+                            column_config={
+                                "StatusCorrelacao": st.column_config.TextColumn("Status Correlação", pinned=True),
+                                "CodigoTUSS_REPASSE": st.column_config.TextColumn("Código TUSS Repasse", pinned=True),
+                                "StatusTUSS": st.column_config.TextColumn("Status TUSS", pinned=True),
+                                "CodigosTUSS_Esperados": st.column_config.TextColumn("Códigos TUSS Esperados", pinned=True),
+                            }
                         )
 
                     # ── Download CSV — sem cap, sempre disponível ─────────────
                     # Cacheado em session_state para evitar to_csv() a cada render
-                    _csv_dl_key = f"corr_csv_dl_{_df_cache_key}_{hash((frozenset(filtro_convenio), frozenset(filtro_status), frozenset(filtro_tuss)))}"
+                    _csv_dl_key = f"corr_csv_dl_{_df_cache_key}_{hash((frozenset(filtro_convenio), frozenset(filtro_status), frozenset(filtro_tuss), frozenset(filtro_status_tuss), filtro_valor_est))}"
                     if _csv_dl_key not in st.session_state:
                         for _ck in [k for k in st.session_state if k.startswith("corr_csv_dl_")]:
                             del st.session_state[_ck]
