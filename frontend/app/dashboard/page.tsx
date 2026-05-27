@@ -34,7 +34,8 @@ export default function DashboardPage() {
         <KpiCard
           title="Correlacionados"
           value={loading ? '—' : stats.correlacionados.toLocaleString('pt-BR')}
-          subtitle={stats.total ? `${((stats.correlacionados / stats.total) * 100).toFixed(0)}% do total` : undefined}
+          subtitle="Pagos e conferidos com o repasse"
+          pctLabel={stats.total ? `${((stats.correlacionados / stats.total) * 100).toFixed(0)}% do total` : undefined}
           icon={CheckCircle}
           color="green"
           loading={loading}
