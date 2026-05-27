@@ -62,20 +62,20 @@ export function getMetodoMatchLabel(metodo: MetodoMatch | null): string {
 export function getStatusCorrelacaoLabel(status: StatusCorrelacao | null): string {
   if (!status) return '—'
   const labels: Record<string, string> = {
-    'CORRELACIONADO': 'Correlacionado',
-    'CORRELACIONADO_COM_GLOSA_TOTAL': 'Glosa Total',
-    'CORRELACIONADO_COM_GLOSA_PARCIAL': 'Glosa Parcial',
-    'CORRELACIONADO_FALLBACK_1': 'Match Fuzzy',
-    'CORRELACIONADO_FALLBACK_2': 'Data Flexível',
-    'CORRELACIONADO_VIA_NR_ATENDIMENTO': 'Via Nr. Atendimento',
-    'CORRELACIONADO_PROCEDIMENTO_DIVERGENTE': 'Proc. Divergente',
-    'CORRELACIONADO_FALLBACK_1_PROCEDIMENTO_DIVERGENTE': 'Fuzzy + Divergente',
-    'CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE': 'Data Flex + Divergente',
-    'CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE': 'Nr Atend + Divergente',
-    'CORRELACIONADO_PROCEDIMENTO_ADICIONAL': 'Proc. Adicional',
-    'NAO_FATURADO_NO_REPASSE': 'Não Faturado',
-    'REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO': 'Repasse s/ Produção',
-    'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO': 'Data Fora do Período',
+    'CORRELACIONADO':                                             'Pago e Conferido',
+    'CORRELACIONADO_COM_GLOSA_TOTAL':                            'Glosado – Valor Zerado',
+    'CORRELACIONADO_COM_GLOSA_PARCIAL':                          'Pago a Menor – Glosa Parcial',
+    'CORRELACIONADO_FALLBACK_1':                                 'Pago – Nome com Variação Gráfica (Conferir)',
+    'CORRELACIONADO_FALLBACK_2':                                 'Pago – Vinculado com Data Diferente (Conferir)',
+    'CORRELACIONADO_VIA_NR_ATENDIMENTO':                         'Pago – Identificado pelo Nº de Atendimento',
+    'CORRELACIONADO_PROCEDIMENTO_DIVERGENTE':                    'Pago com Código de Procedimento Diferente',
+    'CORRELACIONADO_FALLBACK_1_PROCEDIMENTO_DIVERGENTE':         'Nome com Variação + Proc. Diferente (Revisar)',
+    'CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE':         'Data Diferente + Proc. Divergente (Revisar)',
+    'CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE': 'Nº Atend. + Proc. Diferente (Revisar)',
+    'CORRELACIONADO_PROCEDIMENTO_ADICIONAL':                     'Pago como Procedimento Adicional do Episódio',
+    'NAO_FATURADO_NO_REPASSE':                                   'Procedimento não Cobrado pelo Hospital',
+    'REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO':                      'Cobrado pelo Hospital sem Registro na Produção',
+    'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO':                     'Cobrança Fora do Período Analisado',
   }
   return labels[status] ?? status
 }

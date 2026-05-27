@@ -20,16 +20,16 @@ interface StatusTUSSBadgeProps {
 }
 
 const tussLabels: Record<string, string> = {
-  'TUSS_PROC_PRINCIPAL_OK': 'OK',
-  'TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL': 'Adicional Incorporado',
-  'TUSS_PROC_ADICIONAL_RECONHECIDO': 'Adicional OK',
-  'TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS': 'Todos OK',
-  'TUSS_CODIGO_PRINCIPAL_DIVERGENTE': 'Cód. Divergente',
-  'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES': 'Cobrado Simples',
-  'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE': 'Cód. Ausente',
-  'TUSS_NAO_FATURADO_MAPEADO': 'Não Faturado',
-  'TUSS_REPASSE_SEM_PRODUCAO': 'Repasse s/ Prod.',
-  'TUSS_COMBINACAO_SEM_MAPEAMENTO': 'Sem Mapeamento',
+  'TUSS_PROC_PRINCIPAL_OK':                   'Código TUSS Correto',
+  'TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL':   'Adicional Incorporado ao Código Principal',
+  'TUSS_PROC_ADICIONAL_RECONHECIDO':           'Adicional Faturado com Código Correto',
+  'TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS':   'Todos os Adicionais com Código Correto',
+  'TUSS_CODIGO_PRINCIPAL_DIVERGENTE':          'Código do Proc. Principal Diverge do Esperado',
+  'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES':  'Subcobrança: Adicional Faturado como Simples',
+  'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE':  'Código Adicional Não Encontrado no Repasse',
+  'TUSS_NAO_FATURADO_MAPEADO':                 'Não Cobrado – Código TUSS Identificado (Recuperável)',
+  'TUSS_REPASSE_SEM_PRODUCAO':                 'Cobrança no Repasse sem Registro de Produção',
+  'TUSS_COMBINACAO_SEM_MAPEAMENTO':            'Combinação de Procedimentos sem Mapeamento TUSS',
 }
 
 export function StatusTUSSBadge({ status, className }: StatusTUSSBadgeProps) {

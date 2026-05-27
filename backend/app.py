@@ -3406,6 +3406,40 @@ COLUNAS_ESPERADAS = [
     "QtProcedimento", "ValorLiberado", "StatusCorrelacao", "Observacao",
 ]
 
+LABEL_STATUS_CORR: dict[str, str] = {
+    "CORRELACIONADO":                                              "Pago e Conferido",
+    "CORRELACIONADO_COM_GLOSA_PARCIAL":                           "Pago a Menor – Glosa Parcial",
+    "CORRELACIONADO_COM_GLOSA_TOTAL":                             "Glosado – Valor Zerado",
+    "CORRELACIONADO_VIA_NR_ATENDIMENTO":                          "Pago – Identificado pelo Nº de Atendimento",
+    "CORRELACIONADO_FALLBACK_1":                                  "Pago – Nome com Variação Gráfica (Conferir)",
+    "CORRELACIONADO_FALLBACK_2":                                  "Pago – Vinculado com Data Diferente (Conferir)",
+    "CORRELACIONADO_PROCEDIMENTO_ADICIONAL":                      "Pago como Procedimento Adicional do Episódio",
+    "CORRELACIONADO_PROCEDIMENTO_DIVERGENTE":                     "Pago com Código de Procedimento Diferente",
+    "CORRELACIONADO_FALLBACK_1_PROCEDIMENTO_DIVERGENTE":          "Nome com Variação + Proc. Diferente (Revisar)",
+    "CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE":          "Data Diferente + Proc. Divergente (Revisar)",
+    "CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE":  "Nº Atend. + Proc. Diferente (Revisar)",
+    "NAO_FATURADO_NO_REPASSE":                                    "Procedimento não Cobrado pelo Hospital",
+    "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO":                       "Cobrado pelo Hospital sem Registro na Produção",
+    "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO":                      "Cobrança Fora do Período Analisado",
+}
+
+LABEL_STATUS_TUSS: dict[str, str] = {
+    "TUSS_PROC_PRINCIPAL_OK":                    "Código TUSS Correto",
+    "TUSS_PROC_ADICIONAL_RECONHECIDO":           "Adicional Faturado com Código Correto",
+    "TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS":   "Todos os Adicionais com Código Correto",
+    "TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL":   "Adicional Incorporado ao Código Principal",
+    "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES":  "Subcobrança: Adicional Faturado como Simples",
+    "TUSS_CODIGO_PRINCIPAL_DIVERGENTE":          "Código do Proc. Principal Diverge do Esperado",
+    "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE":  "Código Adicional Não Encontrado no Repasse",
+    "TUSS_NAO_FATURADO_MAPEADO":                 "Não Cobrado – Código TUSS Identificado (Recuperável)",
+    "TUSS_REPASSE_SEM_PRODUCAO":                 "Cobrança no Repasse sem Registro de Produção",
+    "TUSS_COMBINACAO_SEM_MAPEAMENTO":            "Combinação de Procedimentos sem Mapeamento TUSS",
+}
+
+# Mapeamento inverso: label amigável → valor bruto (usado nos filtros multiselect)
+_CORR_LABEL_TO_RAW: dict[str, str] = {v: k for k, v in LABEL_STATUS_CORR.items()}
+_TUSS_LABEL_TO_RAW: dict[str, str] = {v: k for k, v in LABEL_STATUS_TUSS.items()}
+
 
 def extrair_csv_do_texto(texto: str) -> str:
     match = re.search(r"```(?:csv)?\s*\n(.*?)```", texto, re.DOTALL | re.IGNORECASE)
@@ -4614,11 +4648,13 @@ def main():
                             placeholder="Todos",
                         )
 
-                        status_disp = sorted(df_final.get("StatusCorrelacao", pd.Series()).dropna().unique().tolist())
-                        filtro_status = fcol2.multiselect(
-                            "Status Correlação", status_disp,
+                        _status_corr_raw = sorted(df_final.get("StatusCorrelacao", pd.Series()).dropna().unique().tolist())
+                        _status_corr_labels = sorted([LABEL_STATUS_CORR.get(s, s) for s in _status_corr_raw])
+                        _filtro_status_labels = fcol2.multiselect(
+                            "Status Correlação", _status_corr_labels,
                             placeholder="Todos",
                         )
+                        filtro_status = [_CORR_LABEL_TO_RAW.get(l, l) for l in _filtro_status_labels]
 
                         tuss_disp = sorted(df_final.get("CodigoTUSS_REPASSE", pd.Series()).dropna().unique().tolist())
                         filtro_tuss = fcol3.multiselect(
@@ -4626,11 +4662,13 @@ def main():
                             placeholder="Todos",
                         )
 
-                        status_tuss_disp = sorted(df_final.get("StatusTUSS", pd.Series()).dropna().unique().tolist())
-                        filtro_status_tuss = fcol4.multiselect(
-                            "Status TUSS", status_tuss_disp,
+                        _status_tuss_raw = sorted(df_final.get("StatusTUSS", pd.Series()).dropna().unique().tolist())
+                        _status_tuss_labels = sorted([LABEL_STATUS_TUSS.get(s, s) for s in _status_tuss_raw])
+                        _filtro_status_tuss_labels = fcol4.multiselect(
+                            "Status TUSS", _status_tuss_labels,
                             placeholder="Todos",
                         )
+                        filtro_status_tuss = [_TUSS_LABEL_TO_RAW.get(l, l) for l in _filtro_status_tuss_labels]
 
                         # Filtro de ValorEstimado_TUSS (com/sem valor)
                         filtro_valor_est = fcol5.selectbox(
@@ -4750,8 +4788,21 @@ def main():
                             st.session_state[_style_cache_key] = _build_style_df(df_display)
                         _cached_style = st.session_state[_style_cache_key]
 
+                        # Aplica labels amigáveis apenas na camada de exibição
+                        df_display_labeled = df_display.copy()
+                        if "StatusCorrelacao" in df_display_labeled.columns:
+                            df_display_labeled["StatusCorrelacao"] = (
+                                df_display_labeled["StatusCorrelacao"]
+                                .map(lambda x: LABEL_STATUS_CORR.get(x, x) if pd.notna(x) else x)
+                            )
+                        if "StatusTUSS" in df_display_labeled.columns:
+                            df_display_labeled["StatusTUSS"] = (
+                                df_display_labeled["StatusTUSS"]
+                                .map(lambda x: LABEL_STATUS_TUSS.get(x, x) if pd.notna(x) else x)
+                            )
+
                         st.dataframe(
-                            df_display.style.apply(lambda _: _cached_style, axis=None),
+                            df_display_labeled.style.apply(lambda _: _cached_style, axis=None),
                             use_container_width=True,
                             height=460,
                             column_config={
