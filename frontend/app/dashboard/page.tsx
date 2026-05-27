@@ -43,24 +43,27 @@ export default function DashboardPage() {
           title="Não Repassados"
           value={loading ? '—' : stats.naoFaturados.toLocaleString('pt-BR')}
           subtitle="Sem correspondência no repasse"
+          pctLabel={stats.total ? `${((stats.naoFaturados / stats.total) * 100).toFixed(0)}% do total` : undefined}
           icon={XCircle}
           color="red"
           href="/faturamento?tab=nao_faturado"
           loading={loading}
         />
         <KpiCard
-          title="Glosas Totais"
-          value={loading ? '—' : stats.glosaTotal.toLocaleString('pt-BR')}
-          subtitle="Valor liberado = zero"
+          title="Glosas Parciais"
+          value={loading ? '—' : stats.glosaParci.toLocaleString('pt-BR')}
+          subtitle="Valor pago a menor pelo convênio"
+          pctLabel={stats.total ? `${((stats.glosaParci / stats.total) * 100).toFixed(0)}% do total` : undefined}
           icon={TrendingDown}
           color="orange"
-          href="/auditoria?filtro=glosa_total"
+          href="/faturamento?tab=downgrade"
           loading={loading}
         />
         <KpiCard
           title="Pendentes Revisão"
           value={loading ? '—' : stats.pendentesRevisao.toLocaleString('pt-BR')}
           subtitle="Match incerto — ação requerida"
+          pctLabel={stats.total ? `${((stats.pendentesRevisao / stats.total) * 100).toFixed(0)}% do total` : undefined}
           icon={AlertTriangle}
           color="purple"
           href="/auditoria"

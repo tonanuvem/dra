@@ -6,6 +6,8 @@ interface KpiCardProps {
   title: string
   value: string | number
   subtitle?: string
+  /** Percentual exibido abaixo do subtítulo, ex: "35% do total" */
+  pctLabel?: string
   icon: LucideIcon
   color: 'green' | 'red' | 'orange' | 'blue' | 'purple'
   href?: string
@@ -20,7 +22,7 @@ const colorMap = {
   purple: { bg: 'bg-purple-50', border: 'border-purple-200', icon: 'text-purple-600 bg-purple-100',value: 'text-purple-700' },
 }
 
-export function KpiCard({ title, value, subtitle, icon: Icon, color, href, loading }: KpiCardProps) {
+export function KpiCard({ title, value, subtitle, pctLabel, icon: Icon, color, href, loading }: KpiCardProps) {
   const c = colorMap[color]
 
   const strValue  = String(value)
@@ -63,6 +65,11 @@ export function KpiCard({ title, value, subtitle, icon: Icon, color, href, loadi
 
         {subtitle && (
           <p className="text-[10px] sm:text-xs text-gray-500 mt-0.5 leading-tight">{subtitle}</p>
+        )}
+        {pctLabel && (
+          <p className={cn('text-[10px] sm:text-xs font-semibold mt-0.5 leading-tight', c.value)}>
+            {pctLabel}
+          </p>
         )}
       </div>
     </div>
