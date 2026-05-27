@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// SECURITY: Service key is NEVER exposed to the frontend.
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
 
 async function verifyAdmin(req: NextRequest): Promise<boolean> {
+  const supabaseAdmin = getSupabaseAdmin()
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return false
 
@@ -27,6 +29,8 @@ async function verifyAdmin(req: NextRequest): Promise<boolean> {
 
 // GET /api/admin/users — list all users (profiles + auth metadata)
 export async function GET(req: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin()
+  
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
@@ -59,6 +63,8 @@ export async function GET(req: NextRequest) {
 
 // PATCH /api/admin/users — update role and/or ativo for a user
 export async function PATCH(req: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin()
+  
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

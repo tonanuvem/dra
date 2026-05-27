@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// SECURITY: Service key is NEVER exposed to the frontend.
-// This route runs server-side only (Next.js API Route).
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_KEY!,
-  { auth: { autoRefreshToken: false, persistSession: false } }
-)
+function getSupabaseAdmin() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
 
 async function getCallerRole(req: NextRequest): Promise<string | null> {
+  const supabaseAdmin = getSupabaseAdmin()
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return null
 
@@ -27,6 +28,8 @@ async function getCallerRole(req: NextRequest): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest) {
+  const supabaseAdmin = getSupabaseAdmin()
+  
   // 1. Verify caller is admin
   const callerRole = await getCallerRole(req)
   if (callerRole !== 'admin') {
