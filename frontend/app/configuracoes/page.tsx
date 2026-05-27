@@ -9,6 +9,7 @@ import type { Role } from '@/lib/permissions'
 import {
   Plus, Check, X, Settings2, Loader2, ChevronDown, ChevronUp,
   Users, UserPlus, Pencil, ShieldCheck, ShieldOff, Mail,
+  Eye, EyeOff, Copy, RefreshCw,
 } from 'lucide-react'
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -279,17 +280,34 @@ function EditUserModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Sub-component — Invite User Modal
+// Sub-component — Create User Modal (senha definida pelo admin)
 // ─────────────────────────────────────────────────────────────────────────────
-function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvited: () => void }) {
-  const [email, setEmail]   = useState('')
-  const [nome, setNome]     = useState('')
-  const [role, setRole]     = useState<Role>('editor')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]   = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+function generatePassword(): string {
+  // Sem caracteres ambíguos (0/O, 1/l/I)
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  return Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('')
+}
 
-  async function handleInvite() {
+function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvited: () => void }) {
+  const [email, setEmail]           = useState('')
+  const [nome, setNome]             = useState('')
+  const [role, setRole]             = useState<Role>('editor')
+  const [password, setPassword]     = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+  // Após criação: guarda as credenciais para exibir ao admin
+  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [copied, setCopied]         = useState(false)
+
+  function handleGenerate() {
+    const pwd = generatePassword()
+    setPassword(pwd)
+    setShowPassword(true)   // exibe a senha gerada
+  }
+
+  async function handleCreate() {
+    if (!password.trim()) { setError('Defina ou gere uma senha'); return }
     setLoading(true)
     setError(null)
     try {
@@ -297,12 +315,12 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
       const res = await fetch('/api/admin/invite', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ email: email.trim(), nome: nome.trim(), role }),
+        body: JSON.stringify({ email: email.trim(), nome: nome.trim(), role, password }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error ?? 'Erro ao convidar')
-      setSuccess(true)
-      setTimeout(() => { onInvited(); onClose() }, 1500)
+      if (!res.ok) throw new Error(json.error ?? 'Erro ao criar usuário')
+      setCredentials({ email: email.trim(), password })
+      onInvited()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {
@@ -310,14 +328,26 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
     }
   }
 
+  async function copyCredentials() {
+    if (!credentials) return
+    await navigator.clipboard.writeText(
+      `Login: ${credentials.email}\nSenha: ${credentials.password}`
+    )
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200">
           <div className="flex items-center gap-2">
             <UserPlus className="w-4 h-4 text-blue-600" />
-            <h2 className="text-sm font-semibold text-gray-800">Convidar novo usuário</h2>
+            <h2 className="text-sm font-semibold text-gray-800">
+              {credentials ? 'Usuário criado' : 'Criar novo usuário'}
+            </h2>
           </div>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors">
             <X className="w-4 h-4 text-gray-500" />
@@ -326,12 +356,51 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
 
         {/* Body */}
         <div className="px-5 py-4 space-y-4">
-          {success ? (
-            <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-              <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
-              <p className="text-sm font-medium text-green-800">Convite enviado com sucesso!</p>
+          {credentials ? (
+            /* ── Sucesso — exibe credenciais para o admin copiar ── */
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+                <Check className="w-4 h-4 flex-shrink-0" />
+                <p className="text-sm font-medium">Conta criada com sucesso!</p>
+              </div>
+
+              {/* Card de credenciais */}
+              <div className="bg-gray-900 rounded-lg p-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                  Credenciais de acesso
+                </p>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500">Login</p>
+                  <p className="text-sm font-mono text-white break-all">{credentials.email}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-gray-500">Senha inicial</p>
+                  <p className="text-lg font-mono font-bold text-yellow-400 tracking-widest">
+                    {credentials.password}
+                  </p>
+                </div>
+              </div>
+
+              {/* Botão copiar */}
+              <button
+                onClick={copyCredentials}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-colors ${
+                  copied
+                    ? 'bg-green-50 border-green-200 text-green-700'
+                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                {copied ? 'Copiado!' : 'Copiar login e senha'}
+              </button>
+
+              <p className="text-xs text-gray-500 text-center leading-relaxed">
+                Compartilhe as credenciais acima com o usuário por um canal seguro.<br />
+                O usuário poderá alterar a senha após o primeiro login.
+              </p>
             </div>
           ) : (
+            /* ── Formulário ── */
             <>
               {/* E-mail */}
               <div>
@@ -361,6 +430,40 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
                 />
               </div>
 
+              {/* Senha */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Senha inicial *</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      className="w-full pl-3 pr-9 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Mín. 6 caracteres"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Gerar
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-400">
+                  O usuário poderá alterar a senha após o primeiro login.
+                </p>
+              </div>
+
               {/* Role */}
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1">Perfil de acesso</label>
@@ -379,9 +482,6 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
                     </button>
                   ))}
                 </div>
-                <p className="mt-1.5 text-xs text-gray-500">
-                  O usuário receberá um e-mail de convite para definir sua senha.
-                </p>
               </div>
 
               {error && (
@@ -392,24 +492,24 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
         </div>
 
         {/* Footer */}
-        {!success && (
-          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-200 bg-gray-50">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
+          >
+            {credentials ? 'Fechar' : 'Cancelar'}
+          </button>
+          {!credentials && (
             <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleInvite}
-              disabled={!email.trim() || loading}
+              onClick={handleCreate}
+              disabled={!email.trim() || !password.trim() || loading}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-              Enviar convite
+              Criar usuário
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

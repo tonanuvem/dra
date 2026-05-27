@@ -29,8 +29,8 @@ async function getCallerRole(req: NextRequest): Promise<string | null> {
 
 export async function POST(req: NextRequest) {
   const supabaseAdmin = getSupabaseAdmin()
-  
-  // 1. Verify caller is admin
+
+  // 1. Verificar que o chamador é admin
   const callerRole = await getCallerRole(req)
   if (callerRole !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -38,39 +38,42 @@ export async function POST(req: NextRequest) {
 
   // 2. Parse body
   const body = await req.json().catch(() => null)
-  const { email, nome, role } = body ?? {}
+  const { email, nome, role, password } = body ?? {}
 
-  if (!email || !role) {
-    return NextResponse.json({ error: 'email e role são obrigatórios' }, { status: 400 })
+  if (!email || !role || !password) {
+    return NextResponse.json({ error: 'email, role e password são obrigatórios' }, { status: 400 })
   }
-
+  if (typeof password !== 'string' || password.length < 6) {
+    return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
+  }
   const validRoles = ['visualizador', 'editor', 'financeiro', 'admin']
   if (!validRoles.includes(role)) {
     return NextResponse.json({ error: 'role inválido' }, { status: 400 })
   }
 
-  // 3. Invite user via Supabase Auth Admin API
-  const { data, error: inviteError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
-    data: { nome: nome ?? '' },
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL ?? ''}/login`,
+  // 3. Criar usuário com senha conhecida (email já confirmado — sem email de verificação)
+  const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { nome: nome ?? '' },
   })
 
-  if (inviteError) {
-    return NextResponse.json({ error: inviteError.message }, { status: 400 })
+  if (createError) {
+    return NextResponse.json({ error: createError.message }, { status: 400 })
   }
 
-  // 4. Update the auto-created profile with the correct role and nome
-  const userId = data.user?.id
+  const userId = createData.user?.id
+
+  // 4. Atualizar profile com role, nome e ativo
   if (userId) {
-    await supabaseAdmin
-      .from('profiles')
-      .upsert({
-        id: userId,
-        email,
-        nome: nome ?? '',
-        role,
-        ativo: true,
-      })
+    await supabaseAdmin.from('profiles').upsert({
+      id: userId,
+      email,
+      nome: nome ?? '',
+      role,
+      ativo: true,
+    })
   }
 
   return NextResponse.json({ ok: true, userId })
