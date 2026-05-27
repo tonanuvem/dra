@@ -28,7 +28,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Standalone output contains everything needed to run without node_modules
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public 2>/dev/null || mkdir -p ./public
 
 USER nextjs
 
