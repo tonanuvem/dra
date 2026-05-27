@@ -1,11 +1,11 @@
 #!/bin/bash
 
-echo "Stopping services..."
-docker-compose down
+echo "Parando serviços..."
+docker compose down
 
 echo ""
-echo "Removing images..."
-docker-compose down --rmi all
+echo "Removendo imagens..."
+docker compose down --rmi all
 
 echo ""
-echo "Cleanup finished."
+echo "Limpeza concluída."

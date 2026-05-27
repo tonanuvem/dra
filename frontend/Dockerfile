@@ -1,8 +1,8 @@
 # ── Stage 1: deps ────────────────────────────────────────────────────────────
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --ignore-scripts
+COPY package.json ./
+RUN npm install --legacy-peer-deps
 
 # ── Stage 2: builder ─────────────────────────────────────────────────────────
 FROM node:22-alpine AS builder
