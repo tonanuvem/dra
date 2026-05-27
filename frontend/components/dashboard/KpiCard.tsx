@@ -23,6 +23,17 @@ const colorMap = {
 export function KpiCard({ title, value, subtitle, icon: Icon, color, href, loading }: KpiCardProps) {
   const c = colorMap[color]
 
+  const strValue  = String(value)
+  const isMonetary = strValue.startsWith('R$')
+  // Escala da fonte baseada no comprimento do valor monetário
+  const valueClass = isMonetary
+    ? strValue.length > 14
+      ? 'text-sm sm:text-base lg:text-lg'   // ex: R$ 1.173.365,14  (≥15 chars)
+      : strValue.length > 10
+        ? 'text-base sm:text-lg lg:text-xl'  // ex: R$ 12.345,67    (11-14 chars)
+        : 'text-lg sm:text-xl lg:text-2xl'   // ex: R$ 123,45       (≤10 chars)
+    : 'text-xl sm:text-2xl'                  // contagens numéricas
+
   const inner = (
     <div className={cn(
       'rounded-xl border p-3 sm:p-4 flex items-start gap-3 transition-shadow h-full',
@@ -42,11 +53,8 @@ export function KpiCard({ title, value, subtitle, icon: Icon, color, href, loadi
           <div className="h-6 sm:h-7 w-16 bg-gray-200 rounded animate-pulse mt-1" />
         ) : (
           <p className={cn(
-            'font-bold mt-0.5 leading-tight',
-            // Valor monetário longo (R$) usa fonte menor para caber
-            typeof value === 'string' && value.startsWith('R$')
-              ? 'text-base sm:text-xl lg:text-2xl'
-              : 'text-xl sm:text-2xl',
+            'font-bold mt-0.5 leading-tight tabular-nums break-all',
+            valueClass,
             c.value,
           )}>
             {value}

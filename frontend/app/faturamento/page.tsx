@@ -8,7 +8,7 @@ import { formatDate, formatCurrency } from '@/lib/utils'
 import type { Correlacao } from '@/lib/types'
 import {
   Download, AlertTriangle, Loader2, FileText, TrendingDown,
-  X, ChevronLeft, ChevronRight,
+  X, ChevronLeft, ChevronRight, Info,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 
@@ -268,6 +268,25 @@ function RowDetailModal({
               </p>
             </div>
           </div>
+
+          {/* Fórmula: apenas para "Cobrado Como Simples" (delta) */}
+          {row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES' &&
+            valorEstimado != null && (
+            <div className="flex items-center gap-1.5 mt-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+              <Info className="w-3 h-3 flex-shrink-0 text-blue-500" />
+              <span>
+                <strong>Cálculo do delta:</strong>{' '}
+                <span className="tabular-nums font-medium">{formatCurrency(valorEstimado)}</span>
+                <span className="text-blue-400 mx-1">(TUSS correto)</span>
+                <span className="font-bold">−</span>
+                <span className="tabular-nums font-medium mx-1">{formatCurrency(valorRecebido ?? 0)}</span>
+                <span className="text-blue-400 mr-1">(já recebido)</span>
+                <span className="font-bold">=</span>
+                <span className="tabular-nums font-bold ml-1 text-green-700">{formatCurrency(valorRecuperar)}</span>
+              </span>
+            </div>
+          )}
+
           <p className="text-[10px] text-gray-400 text-center mt-2">
             Use ← → ou as setas para navegar entre registros · Esc para fechar
           </p>
@@ -407,6 +426,23 @@ function FaturamentoContent() {
 
         <p className="text-sm text-gray-500">{TAB_CONFIG[activeTab].description}</p>
 
+        {/* ── Nota de cálculo: delta para "Cobrado Como Simples" ── */}
+        {(activeTab === 'downgrade' || activeTab === 'todos') && (
+          <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">
+            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-blue-500" />
+            <span>
+              <strong>Cobrado Como Simples — cálculo do delta:</strong>{' '}
+              o campo <em>"A Recuperar"</em> nesta categoria representa apenas a{' '}
+              <strong>diferença</strong> entre o valor correto (tabela TUSS) e o valor já recebido
+              — não o total do procedimento.{' '}
+              {activeTab === 'todos' && (
+                <>Para as demais categorias (<em>Código Adicional Ausente</em> e <em>Não Faturados</em>),
+                o valor a recuperar é o estimado TUSS integral, pois nada foi recebido.</>
+              )}
+            </span>
+          </div>
+        )}
+
         {/* ── Aviso de negativos (só downgrade) ─────────── */}
         {activeTab === 'downgrade' && negativos > 0 && (
           <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
@@ -477,7 +513,12 @@ function FaturamentoContent() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Convênio</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Cód. Pago</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Cód. Esperado</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">A Recuperar</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      A Recuperar
+                      {(activeTab === 'downgrade' || activeTab === 'todos') && (
+                        <span className="ml-1 text-gray-400 normal-case font-normal">(delta p/ simples)</span>
+                      )}
+                    </th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
                     <th className="px-4 py-3 w-8" />
                   </tr>

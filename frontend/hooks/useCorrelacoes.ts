@@ -127,6 +127,13 @@ export function useDashboardStats() {
         let tussCodigoSemHistorico = 0  // Causa 1+3: código mapeado mas sem preço histórico
         let tussMapeamentoSemCodigo = 0 // Causa 2: mapeamento existe mas código TUSS vazio
 
+        // StatusTUSS que geram recuperação financeira ativa (mesmos da aba Faturamento)
+        const RECOVERY_TUSS = new Set([
+          'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
+          'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE',
+          'TUSS_NAO_FATURADO_MAPEADO',
+        ])
+
         for (const row of allRows) {
           const s = row.StatusCorrelacao ?? 'DESCONHECIDO'
           if (!byStatus[s]) byStatus[s] = { count: 0, valor: 0, valorPago: 0 }
@@ -140,8 +147,21 @@ export function useDashboardStats() {
             StatusTUSS: row.StatusTUSS ?? undefined,
           })) pendentesRevisao++
 
-          if (Number(row.ValorEstimado_TUSS ?? 0) > 0) {
-            valorRecuperar += Number(row.ValorEstimado_TUSS)
+          // ── Valor a Recuperar: mesma lógica da aba Faturamento ──────────────
+          // Apenas os 3 StatusTUSS de recuperação ativa (exclui linhas
+          // correlacionadas OK, glosas totais, etc. que também têm ValorEstimado_TUSS)
+          if (row.StatusTUSS && RECOVERY_TUSS.has(row.StatusTUSS)) {
+            const estimado = Number(row.ValorEstimado_TUSS ?? 0)
+            const recebido = Number(row.ValorLiberado_REPASSE ?? 0)
+            let gap: number
+            if (row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES') {
+              // Cobrado como simples: recuperável = diferença (pode ser negativa — ignora)
+              gap = Math.max(0, estimado - recebido)
+            } else {
+              // Ausente + Não Faturado: recuperável = valor estimado inteiro
+              gap = estimado > 0 ? estimado : 0
+            }
+            valorRecuperar += gap
           }
 
           // ── Filas TUSS: apenas NAO_FATURADO_NO_REPASSE + TUSS_NAO_FATURADO_MAPEADO sem valor
