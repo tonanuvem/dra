@@ -73,7 +73,7 @@ export function getStatusCorrelacaoLabel(status: StatusCorrelacao | null): strin
     'CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE':         'Data Diferente + Proc. Divergente (Revisar)',
     'CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE': 'Nº Atend. + Proc. Diferente (Revisar)',
     'CORRELACIONADO_PROCEDIMENTO_ADICIONAL':                     'Pago como Procedimento Adicional do Episódio',
-    'NAO_FATURADO_NO_REPASSE':                                   'Procedimento não Cobrado pelo Hospital',
+    'NAO_FATURADO_NO_REPASSE':                                   'Procedimento não Repassado pelo Hospital',
     'REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO':                      'Cobrado pelo Hospital sem Registro na Produção',
     'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO':                     'Cobrança Fora do Período Analisado',
   }

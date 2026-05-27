@@ -3418,7 +3418,7 @@ LABEL_STATUS_CORR: dict[str, str] = {
     "CORRELACIONADO_FALLBACK_1_PROCEDIMENTO_DIVERGENTE":          "Nome com Variação + Proc. Diferente (Revisar)",
     "CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE":          "Data Diferente + Proc. Divergente (Revisar)",
     "CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE":  "Nº Atend. + Proc. Diferente (Revisar)",
-    "NAO_FATURADO_NO_REPASSE":                                    "Procedimento não Cobrado pelo Hospital",
+    "NAO_FATURADO_NO_REPASSE":                                    "Procedimento não Repassado pelo Hospital",
     "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO":                       "Cobrado pelo Hospital sem Registro na Produção",
     "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO":                      "Cobrança Fora do Período Analisado",
 }
@@ -4880,7 +4880,8 @@ def main():
                                             st.warning("⚠️ Não foi possível limpar dados anteriores. Inserindo novos dados...")
                                 
                                 with st.spinner(f"📤 Carregando {len(df_filtrado)} registros..."):
-                                    records = df_filtrado.to_dict('records')
+                                    # NaN não é JSON válido — substitui por None (→ null no JSON)
+                                    records = df_filtrado.where(df_filtrado.notna(), other=None).to_dict('records')
                                     
                                     batch_size = 1000
                                     for i in range(0, len(records), batch_size):
