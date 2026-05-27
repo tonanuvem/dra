@@ -1,7 +1,5 @@
 .git
 .gitignore
-.env.local
-.env*.local
 node_modules
 .next
 out
@@ -10,5 +8,5 @@ out
 Dockerfile
 docker-compose.yml
 .dockerignore
-load_data.py
-supabase-migration.sql
+run.sh
+stop.sh
