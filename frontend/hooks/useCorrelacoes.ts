@@ -18,6 +18,26 @@ export interface CorrelacoesFilter {
   search?: string
   limit?: number
   offset?: number
+  /**
+   * Quando true, ignora limit/offset e carrega TODOS os registros em batches
+   * de 1000 (igual ao dashboard). Use para páginas que precisam de totais exatos.
+   */
+  loadAll?: boolean
+}
+
+/** Aplica cláusulas WHERE em uma query Supabase já iniciada (tipada como any) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyFilters(q: any, filter: CorrelacoesFilter): any {
+  if (filter.statusCorrelacao?.length)  q = q.in('StatusCorrelacao', filter.statusCorrelacao)
+  if (filter.statusTUSS?.length)        q = q.in('StatusTUSS', filter.statusTUSS)
+  if (filter.metodoMatch?.length)       q = q.in('MetodoMatch', filter.metodoMatch)
+  if (filter.pendentesRevisao && AUDIT_COLUMNS_EXIST) q = q.is('decisao_humana', null)
+  if (filter.search) {
+    q = q.or(
+      `Paciente_PRODUCAO.ilike.%${filter.search}%,Paciente_REPASSE.ilike.%${filter.search}%`
+    )
+  }
+  return q
 }
 
 export function useCorrelacoes(filter: CorrelacoesFilter = {}) {
@@ -30,36 +50,36 @@ export function useCorrelacoes(filter: CorrelacoesFilter = {}) {
     setLoading(true)
     setError(null)
     try {
-      let query = supabase.from(TABLE).select('*', { count: 'exact' })
+      if (filter.loadAll) {
+        // ── Batch loading: carrega TODOS os registros em lotes de 1000 ────
+        // Necessário quando o resultado total excede o limite padrão do Supabase.
+        const BATCH = 1000
+        let allRows: Correlacao[] = []
+        let from = 0
+        while (true) {
+          let q = applyFilters(supabase.from(TABLE).select('*'), filter)
+          q = q.order('Data_PRODUCAO', { ascending: false }).range(from, from + BATCH - 1)
+          const { data: batch, error: err } = await q
+          if (err) throw err
+          if (!batch || batch.length === 0) break
+          allRows = allRows.concat((batch as unknown) as Correlacao[])
+          if (batch.length < BATCH) break
+          from += BATCH
+        }
+        setData(allRows)
+        setTotal(allRows.length)
+      } else {
+        // ── Paginação normal ──────────────────────────────────────────────
+        let q = applyFilters(supabase.from(TABLE).select('*', { count: 'exact' }), filter)
+        q = q
+          .order('Data_PRODUCAO', { ascending: false })
+          .range(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 50) - 1)
 
-      if (filter.statusCorrelacao?.length) {
-        query = query.in('StatusCorrelacao', filter.statusCorrelacao)
+        const { data: rows, count, error: err } = await q
+        if (err) throw err
+        setData(((rows as unknown) as Correlacao[]) ?? [])
+        setTotal(count ?? 0)
       }
-      if (filter.statusTUSS?.length) {
-        query = query.in('StatusTUSS', filter.statusTUSS)
-      }
-      if (filter.metodoMatch?.length) {
-        query = query.in('MetodoMatch', filter.metodoMatch)
-      }
-      // Only filter by decisao_humana if column exists
-      if (filter.pendentesRevisao && AUDIT_COLUMNS_EXIST) {
-        query = query.is('decisao_humana', null)
-      }
-      if (filter.search) {
-        query = query.or(
-          `Paciente_PRODUCAO.ilike.%${filter.search}%,Paciente_REPASSE.ilike.%${filter.search}%`
-        )
-      }
-
-      query = query
-        .order('Data_PRODUCAO', { ascending: false })
-        .range(filter.offset ?? 0, (filter.offset ?? 0) + (filter.limit ?? 50) - 1)
-
-      const { data: rows, count, error: err } = await query
-
-      if (err) throw err
-      setData(((rows as unknown) as Correlacao[]) ?? [])
-      setTotal(count ?? 0)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
     } finally {

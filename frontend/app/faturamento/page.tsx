@@ -309,7 +309,7 @@ function FaturamentoContent() {
 
   const { data, loading } = useCorrelacoes({
     statusTUSS: [...TAB_CONFIG[activeTab].statusTUSS] as any[],
-    limit: 1000,
+    loadAll: true,   // carrega todos os registros em batches — sem truncar em 1000
   })
 
   const processedData: ProcessedRow[] = useMemo(() => (
