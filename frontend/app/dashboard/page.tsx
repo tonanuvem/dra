@@ -11,14 +11,19 @@ export default function DashboardPage() {
   const { stats, loading } = useDashboardStats()
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6">
+
+      {/* ── Cabeçalho ──────────────────────────────────── */}
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Visão geral do lote de correlação de endoscopia</p>
+        <h1 className="text-lg sm:text-xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-xs sm:text-sm text-gray-500 mt-0.5">
+          Visão geral do lote de correlação de endoscopia
+        </p>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      {/* ── KPI Cards ──────────────────────────────────── */}
+      {/* Mobile: 2 colunas · Tablet (sm): 3 · Desktop (xl): 6 */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
         <KpiCard
           title="Total de Registros"
           value={loading ? '—' : stats.total.toLocaleString('pt-BR')}
@@ -35,7 +40,7 @@ export default function DashboardPage() {
           loading={loading}
         />
         <KpiCard
-          title="Não Faturados"
+          title="Não Repassados"
           value={loading ? '—' : stats.naoFaturados.toLocaleString('pt-BR')}
           subtitle="Sem correspondência no repasse"
           icon={XCircle}
@@ -72,12 +77,13 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Charts + Work Queues */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* ── Gráfico + Filas ─────────────────────────────── */}
+      {/* Mobile: empilhados · Desktop (lg): lado a lado */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {loading ? (
           <>
-            <div className="bg-white rounded-xl border border-gray-200 p-5 h-80 animate-pulse" />
-            <div className="bg-white rounded-xl border border-gray-200 p-5 h-80 animate-pulse" />
+            <div className="bg-white rounded-xl border border-gray-200 p-5 h-72 sm:h-80 animate-pulse" />
+            <div className="bg-white rounded-xl border border-gray-200 p-5 h-72 sm:h-80 animate-pulse" />
           </>
         ) : (
           <>
@@ -87,13 +93,15 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Empty state */}
+      {/* ── Estado vazio ─────────────────────────────────── */}
       {!loading && stats.total === 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center">
-          <AlertTriangle className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
-          <p className="font-medium text-yellow-800">Nenhum dado encontrado</p>
-          <p className="text-sm text-yellow-600 mt-1">
-            A tabela <code className="bg-yellow-100 px-1 rounded">correlacao_endoscopia</code> está vazia ou o acesso está bloqueado por RLS.
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 sm:p-6 text-center">
+          <AlertTriangle className="w-7 h-7 sm:w-8 sm:h-8 text-yellow-500 mx-auto mb-2" />
+          <p className="font-medium text-yellow-800 text-sm sm:text-base">Nenhum dado encontrado</p>
+          <p className="text-xs sm:text-sm text-yellow-600 mt-1">
+            A tabela{' '}
+            <code className="bg-yellow-100 px-1 rounded">correlacao_endoscopia</code>{' '}
+            está vazia ou o acesso está bloqueado por RLS.
             Execute a migration SQL para carregar os dados.
           </p>
         </div>

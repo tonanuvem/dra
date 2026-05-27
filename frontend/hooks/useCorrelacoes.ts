@@ -84,6 +84,11 @@ export function useDashboardStats() {
     pendentesRevisao: 0,
     valorRecuperar: 0,
     statusDistribution: [] as { status: string; total: number; valor: number }[],
+    // ── Filas TUSS ───────────────────────────────────────
+    // Causa 1+3: código identificado mas sem histórico de preço
+    tussCodigoSemHistorico: 0,
+    // Causa 2: mapeamento sem código TUSS definido
+    tussMapeamentoSemCodigo: 0,
   })
   const [loading, setLoading] = useState(true)
 
@@ -96,6 +101,7 @@ export function useDashboardStats() {
           ValorEstimado_TUSS: number | null
           MetodoMatch: string | null
           StatusTUSS: string | null
+          CodigosTUSS_Esperados: string | null
         }> = []
 
         let from = 0
@@ -103,7 +109,7 @@ export function useDashboardStats() {
         while (true) {
           const { data: batch, error } = await supabase
             .from(TABLE)
-            .select('StatusCorrelacao, ValorEstimado_TUSS, MetodoMatch, StatusTUSS')
+            .select('StatusCorrelacao, ValorEstimado_TUSS, MetodoMatch, StatusTUSS, CodigosTUSS_Esperados')
             .range(from, from + batchSize - 1)
 
           if (error || !batch || batch.length === 0) break
@@ -115,8 +121,10 @@ export function useDashboardStats() {
         if (allRows.length === 0) return
 
         const byStatus: Record<string, { count: number; valor: number }> = {}
-        let pendentesRevisao = 0
-        let valorRecuperar = 0
+        let pendentesRevisao      = 0
+        let valorRecuperar        = 0
+        let tussCodigoSemHistorico = 0  // Causa 1+3: código mapeado mas sem preço histórico
+        let tussMapeamentoSemCodigo = 0 // Causa 2: mapeamento existe mas código TUSS vazio
 
         for (const row of allRows) {
           const s = row.StatusCorrelacao ?? 'DESCONHECIDO'
@@ -132,6 +140,22 @@ export function useDashboardStats() {
 
           if (Number(row.ValorEstimado_TUSS ?? 0) > 0) {
             valorRecuperar += Number(row.ValorEstimado_TUSS)
+          }
+
+          // ── Filas TUSS: apenas NAO_FATURADO_NO_REPASSE + TUSS_NAO_FATURADO_MAPEADO sem valor
+          const isNaoFaturadoMapeado =
+            row.StatusCorrelacao === 'NAO_FATURADO_NO_REPASSE' &&
+            row.StatusTUSS       === 'TUSS_NAO_FATURADO_MAPEADO' &&
+            row.ValorEstimado_TUSS == null
+
+          if (isNaoFaturadoMapeado) {
+            const codigos = (row.CodigosTUSS_Esperados ?? '').trim()
+            const temCodigo = codigos !== '' && codigos.toLowerCase() !== 'nan'
+            if (temCodigo) {
+              tussCodigoSemHistorico++   // código existe, mas sem histórico de preço
+            } else {
+              tussMapeamentoSemCodigo++  // mapeamento incompleto: código ausente
+            }
           }
         }
 
@@ -150,6 +174,8 @@ export function useDashboardStats() {
           pendentesRevisao,
           valorRecuperar,
           statusDistribution: dist,
+          tussCodigoSemHistorico,
+          tussMapeamentoSemCodigo,
         })
       } finally {
         setLoading(false)
