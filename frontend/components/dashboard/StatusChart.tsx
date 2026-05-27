@@ -24,9 +24,11 @@ function fmtBRL(value: number): string {
 
 interface StatusChartProps {
   data: { status: string; total: number; valor: number; valorPago: number }[]
+  /** Exibe valores financeiros (R$). false para visualizador/editor */
+  showFinancial?: boolean
 }
 
-export function StatusChart({ data }: StatusChartProps) {
+export function StatusChart({ data, showFinancial = true }: StatusChartProps) {
   const totalRegistros = data.reduce((s, d) => s + d.total, 0)
   const totalValorPago = data.reduce((s, d) => s + d.valorPago, 0)
 
@@ -50,7 +52,7 @@ export function StatusChart({ data }: StatusChartProps) {
       {/* ── Cabeçalho ──────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
         <h3 className="text-sm font-semibold text-gray-700">Distribuição por Status</h3>
-        {totalValorPago > 0 && (
+        {showFinancial && totalValorPago > 0 && (
           <div className="text-right flex-shrink-0">
             <p className="text-[10px] text-gray-400 leading-tight">Total pago no repasse</p>
             <p className="text-sm font-bold text-emerald-700 tabular-nums">{fmtBRL(totalValorPago)}</p>
@@ -91,15 +93,17 @@ export function StatusChart({ data }: StatusChartProps) {
                           <span className="text-gray-400 ml-1">({d.pctReg}%)</span>
                         </span>
                       </div>
-                      <div className="flex justify-between gap-4 text-xs">
-                        <span className="text-gray-500">Valor pago</span>
-                        <span className={`font-semibold tabular-nums ${d.valorPago > 0 ? 'text-emerald-700' : 'text-gray-400'}`}>
-                          {d.valorPago > 0 ? fmtBRL(d.valorPago) : '—'}
-                          {d.valorPago > 0 && totalValorPago > 0 && (
-                            <span className="text-gray-400 font-normal ml-1">({d.pctValor}%)</span>
-                          )}
-                        </span>
-                      </div>
+                      {showFinancial && (
+                        <div className="flex justify-between gap-4 text-xs">
+                          <span className="text-gray-500">Valor pago</span>
+                          <span className={`font-semibold tabular-nums ${d.valorPago > 0 ? 'text-emerald-700' : 'text-gray-400'}`}>
+                            {d.valorPago > 0 ? fmtBRL(d.valorPago) : '—'}
+                            {d.valorPago > 0 && totalValorPago > 0 && (
+                              <span className="text-gray-400 font-normal ml-1">({d.pctValor}%)</span>
+                            )}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
@@ -129,17 +133,19 @@ export function StatusChart({ data }: StatusChartProps) {
                 </span>
               </div>
 
-              {/* Linha 2: valor financeiro */}
-              <div className="flex items-center justify-end gap-1 mt-0.5">
-                {entry.valorPago > 0 ? (
-                  <span className="text-[11px] font-semibold text-emerald-700 tabular-nums">
-                    {fmtBRL(entry.valorPago)}
-                    <span className="text-[10px] font-normal text-gray-400 ml-1">({entry.pctValor}% do total)</span>
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-gray-300 italic">sem valor no repasse</span>
-                )}
-              </div>
+              {/* Linha 2: valor financeiro (só para financeiro/admin) */}
+              {showFinancial && (
+                <div className="flex items-center justify-end gap-1 mt-0.5">
+                  {entry.valorPago > 0 ? (
+                    <span className="text-[11px] font-semibold text-emerald-700 tabular-nums">
+                      {fmtBRL(entry.valorPago)}
+                      <span className="text-[10px] font-normal text-gray-400 ml-1">({entry.pctValor}% do total)</span>
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-gray-300 italic">sem valor no repasse</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

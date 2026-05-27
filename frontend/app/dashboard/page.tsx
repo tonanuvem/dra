@@ -1,14 +1,18 @@
 'use client'
 
 import { useDashboardStats } from '@/hooks/useCorrelacoes'
+import { useAuth } from '@/contexts/AuthContext'
 import { KpiCard } from '@/components/dashboard/KpiCard'
 import { StatusChart } from '@/components/dashboard/StatusChart'
 import { WorkQueues } from '@/components/dashboard/WorkQueues'
+import { PermissionGate } from '@/components/auth/PermissionGate'
 import { formatCurrency } from '@/lib/utils'
 import { CheckCircle, XCircle, AlertTriangle, DollarSign, TrendingDown, Activity } from 'lucide-react'
 
 export default function DashboardPage() {
   const { stats, loading } = useDashboardStats()
+  const { permissions } = useAuth()
+  const canFinancial = permissions?.canViewFinancial ?? false
 
   return (
     <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6">
@@ -22,8 +26,8 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPI Cards ──────────────────────────────────── */}
-      {/* Mobile: 2 colunas · Tablet (sm): 3 · Desktop (xl): 6 */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
+      {/* Mobile: 2 colunas · Tablet (sm): 3 · Desktop (xl): 6 sem financeiro / xl:5 sem ele */}
+      <div className={`grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 ${canFinancial ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
         <KpiCard
           title="Total de Registros"
           value={loading ? '—' : stats.total.toLocaleString('pt-BR')}
@@ -47,7 +51,7 @@ export default function DashboardPage() {
           pctLabel={stats.total ? `${((stats.naoFaturados / stats.total) * 100).toFixed(0)}% do total` : undefined}
           icon={XCircle}
           color="red"
-          href="/faturamento?tab=nao_faturado"
+          href={canFinancial ? '/faturamento?tab=nao_faturado' : undefined}
           loading={loading}
         />
         <KpiCard
@@ -57,7 +61,7 @@ export default function DashboardPage() {
           pctLabel={stats.total ? `${((stats.glosaParci / stats.total) * 100).toFixed(0)}% do total` : undefined}
           icon={TrendingDown}
           color="orange"
-          href="/faturamento?tab=downgrade"
+          href={canFinancial ? '/faturamento?tab=downgrade' : undefined}
           loading={loading}
         />
         <KpiCard
@@ -70,15 +74,18 @@ export default function DashboardPage() {
           href="/auditoria"
           loading={loading}
         />
-        <KpiCard
-          title="Valor a Recuperar"
-          value={loading ? '—' : formatCurrency(stats.valorRecuperar)}
-          subtitle="Estimativa via tabela TUSS"
-          icon={DollarSign}
-          color="blue"
-          href="/faturamento"
-          loading={loading}
-        />
+        {/* Card financeiro — visível apenas para financeiro/admin */}
+        <PermissionGate require="canViewFinancial">
+          <KpiCard
+            title="Valor a Recuperar"
+            value={loading ? '—' : formatCurrency(stats.valorRecuperar)}
+            subtitle="Estimativa via tabela TUSS"
+            icon={DollarSign}
+            color="blue"
+            href="/faturamento"
+            loading={loading}
+          />
+        </PermissionGate>
       </div>
 
       {/* ── Gráfico + Filas ─────────────────────────────── */}
@@ -91,8 +98,8 @@ export default function DashboardPage() {
           </>
         ) : (
           <>
-            <StatusChart data={stats.statusDistribution} />
-            <WorkQueues stats={stats} />
+            <StatusChart data={stats.statusDistribution} showFinancial={canFinancial} />
+            <WorkQueues stats={stats} showFinancial={canFinancial} />
           </>
         )}
       </div>

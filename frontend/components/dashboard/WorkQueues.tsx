@@ -19,6 +19,8 @@ interface WorkQueuesProps {
     tussCodigoSemHistorico:  number   // Causa 1+3: código mapeado sem preço histórico
     tussMapeamentoSemCodigo: number   // Causa 2: mapeamento sem código TUSS definido
   }
+  /** Exibe itens financeiros (links para Faturamento). false para visualizador/editor */
+  showFinancial?: boolean
 }
 
 const priorityConfig = {
@@ -27,8 +29,11 @@ const priorityConfig = {
   baixa: { card: 'border-yellow-200 bg-yellow-50 hover:bg-yellow-100', dot: 'bg-yellow-500', badge: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
 }
 
-export function WorkQueues({ stats }: WorkQueuesProps) {
-  const queues: WorkQueueItem[] = [
+export function WorkQueues({ stats, showFinancial = true }: WorkQueuesProps) {
+  // Itens que apontam para /faturamento só são exibidos para financeiro/admin
+  const FINANCIAL_HREFS = ['/faturamento', '/faturamento?tab=downgrade']
+
+  const allQueues: WorkQueueItem[] = [
     // ── Alta prioridade ──────────────────────────────────────────────
     {
       title:       'Mapeamento TUSS Incompleto',
@@ -81,6 +86,10 @@ export function WorkQueues({ stats }: WorkQueuesProps) {
       priority:    'baixa',
     },
   ]
+
+  const queues = showFinancial
+    ? allQueues
+    : allQueues.filter(q => !FINANCIAL_HREFS.includes(q.href))
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-4">

@@ -1,9 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { CheckCircle, Unlink, Loader2 } from 'lucide-react'
+import { CheckCircle, Unlink, Loader2, Lock } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { TABLES } from '@/lib/config'
+import { useAuth } from '@/contexts/AuthContext'
 import type { DecisaoHumana } from '@/lib/types'
 
 interface DecisionButtonsProps {
@@ -14,6 +15,26 @@ interface DecisionButtonsProps {
 
 export function DecisionButtons({ chaveCorrelacao, currentDecision, onDecision }: DecisionButtonsProps) {
   const [loading, setLoading] = useState(false)
+  const { permissions } = useAuth()
+
+  // Visualizador: mostra estado atual (read-only) mas não pode alterar
+  if (!permissions?.canEdit) {
+    return currentDecision ? (
+      <div className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium ${
+        currentDecision === 'confirmado'
+          ? 'bg-green-50 text-green-700 border border-green-200'
+          : 'bg-gray-100 text-gray-600 border border-gray-200'
+      }`}>
+        <CheckCircle className="w-4 h-4" />
+        {currentDecision === 'confirmado' ? 'Correlação confirmada' : 'Registro desvinculado'}
+      </div>
+    ) : (
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-gray-400 bg-gray-50 border border-gray-200">
+        <Lock className="w-3.5 h-3.5" />
+        Sem permissão para editar
+      </div>
+    )
+  }
 
   const decide = async (decision: 'confirmado' | 'desvinculado') => {
     setLoading(true)
