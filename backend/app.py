@@ -4811,13 +4811,22 @@ def main():
                                 # Valida se a tabela existe
                                 with st.spinner("🔍 Validando tabela..."):
                                     try:
-                                        supabase.table("correlacao_endoscopia").select("id").limit(1).execute()
+                                        supabase.table("correlacao_endoscopia").select("*").limit(1).execute()
                                     except Exception as e:
                                         st.error(f"❌ Tabela 'correlacao_endoscopia' não existe ou não está acessível: {e}")
                                         st.stop()
                                 
                                 with st.spinner("🗑️ Removendo dados anteriores..."):
-                                    supabase.table("correlacao_endoscopia").delete().neq("id", 0).execute()
+                                    # Deleta todos os registros sem depender de coluna específica
+                                    try:
+                                        # Tenta deletar tudo usando uma condição sempre verdadeira
+                                        supabase.table("correlacao_endoscopia").delete().neq("ChaveCorrelacao", "").execute()
+                                    except:
+                                        # Fallback: truncate via RPC se disponível
+                                        try:
+                                            supabase.rpc("truncate_correlacao_endoscopia").execute()
+                                        except:
+                                            st.warning("⚠️ Não foi possível limpar dados anteriores. Inserindo novos dados...")
                                 
                                 with st.spinner(f"📤 Carregando {len(df_filtrado)} registros..."):
                                     records = df_filtrado.to_dict('records')
