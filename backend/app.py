@@ -4715,7 +4715,7 @@ def main():
 
                         # ── Camada 3: cap de linhas na exibição interativa ────
                         # Reduz custo de serialização do st.dataframe pelo WebSocket
-                        _MAX_ROWS_DISPLAY = 1000
+                        _MAX_ROWS_DISPLAY = 200
                         if _n_filtrado > _MAX_ROWS_DISPLAY:
                             st.info(
                                 f"ℹ️ Exibindo as primeiras **{_MAX_ROWS_DISPLAY:,}** de "
