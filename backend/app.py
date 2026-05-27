@@ -3259,10 +3259,18 @@ def correlacionar_csv_arquivos(
         df_final = pd.DataFrame(linhas_resultado)
         df_final.fillna("", inplace=True)
 
+        # ── Gera/atualiza tuss_valores.csv ANTES do enriquecimento ────────────
+        try:
+            if not valores_tuss_preloaded or not valores_tuss_preloaded:
+                _gerar_valores_tuss(df_final)
+                _carregar_valores_tuss.clear()
+                logger.info("tuss_valores.csv gerado/atualizado durante correlação")
+        except Exception as _e_gen:
+            logger.warning(f"Geração tuss_valores ignorada: {_e_gen}", exc_info=True)
+
         # ── Enriquecimento com valores e descrições TUSS ──────────────────────
         try:
-            # Mesmo padrão: preloaded (não vazio) → fallback para _carregar_valores_tuss
-            # (valores_tuss muda com mais frequência, cache stale menos crítico aqui)
+            # Recarrega valores_tuss após geração
             _valores_tuss_corr = (
                 valores_tuss_preloaded if valores_tuss_preloaded
                 else _carregar_valores_tuss()
@@ -4278,18 +4286,6 @@ def main():
                                         or _k == "corr_show_table"
                                     ):
                                         del st.session_state[_k]
-                                # Gera/atualiza tuss_valores.csv imediatamente
-                                try:
-                                    _df_fresh = texto_para_dataframe(
-                                        extrair_csv_do_texto(_res_local["value"])
-                                    )
-                                    if _df_fresh is not None and not _df_fresh.empty:
-                                        _prog_local.progress(1.0, "Calculando estimativas de valor TUSS...")
-                                        _gerar_valores_tuss(_df_fresh)
-                                        _carregar_valores_tuss.clear()
-                                        logger.info("tuss_valores.csv atualizado pós-correlação")
-                                except Exception as _e_tv:
-                                    logger.warning(f"tuss_valores pós-correlação ignorado: {_e_tv}")
                                 status_local.update(
                                     label="✅ Correlação local concluída!",
                                     state="complete", expanded=False
@@ -4371,7 +4367,7 @@ def main():
                                     label="✅ Correlação concluída!", state="complete", expanded=False
                                 )
                                 st.session_state["csv_correlacionado"] = thread_result_corr["value"]
-                                # Invalida caches dependentes e gera tuss_valores.csv
+                                # Invalida caches dependentes
                                 for _k in list(st.session_state.keys()):
                                     if (
                                         _k.startswith("corr_df_")
@@ -4381,16 +4377,6 @@ def main():
                                         or _k == "corr_show_table"
                                     ):
                                         del st.session_state[_k]
-                                try:
-                                    _df_fresh_llm = texto_para_dataframe(
-                                        extrair_csv_do_texto(thread_result_corr["value"])
-                                    )
-                                    if _df_fresh_llm is not None and not _df_fresh_llm.empty:
-                                        _gerar_valores_tuss(_df_fresh_llm)
-                                        _carregar_valores_tuss.clear()
-                                        logger.info("tuss_valores.csv atualizado pós-correlação LLM")
-                                except Exception as _e_tv_llm:
-                                    logger.warning(f"tuss_valores pós-correlação LLM ignorado: {_e_tv_llm}")
 
             # ── Exibe resultado correlacionado ────────────────────────────────
             csv_correlacionado_raw = st.session_state.get("csv_correlacionado")
@@ -4768,6 +4754,51 @@ def main():
                             mime="text/plain",
                             help="Log de diagnóstico da verificação TUSS — gerado durante a correlação",
                         )
+                    
+                    # ── Botão de Recarregar no Supabase ──────────────────────
+                    st.divider()
+                    if st.button("🔄 Recarregar Dados no Supabase", type="secondary", help="Descarta dados anteriores e recarrega toda a tabela correlacao_endoscopia"):
+                        try:
+                            from supabase import create_client
+                            
+                            # Configuração do Supabase
+                            supabase_url = os.getenv("SUPABASE_URL")
+                            supabase_key = os.getenv("SUPABASE_KEY")
+                            
+                            if not supabase_url or not supabase_key:
+                                st.error("❌ Variáveis SUPABASE_URL e SUPABASE_KEY não configuradas")
+                            else:
+                                with st.spinner("🔄 Conectando ao Supabase..."):
+                                    supabase = create_client(supabase_url, supabase_key)
+                                
+                                # Valida se a tabela existe
+                                with st.spinner("🔍 Validando tabela..."):
+                                    try:
+                                        supabase.table("correlacao_endoscopia").select("id").limit(1).execute()
+                                    except Exception as e:
+                                        st.error(f"❌ Tabela 'correlacao_endoscopia' não existe ou não está acessível: {e}")
+                                        st.stop()
+                                
+                                with st.spinner("🗑️ Removendo dados anteriores..."):
+                                    supabase.table("correlacao_endoscopia").delete().neq("id", 0).execute()
+                                
+                                with st.spinner(f"📤 Carregando {len(df_filtrado)} registros..."):
+                                    records = df_filtrado.to_dict('records')
+                                    
+                                    batch_size = 1000
+                                    for i in range(0, len(records), batch_size):
+                                        batch = records[i:i + batch_size]
+                                        supabase.table("correlacao_endoscopia").insert(batch).execute()
+                                        st.progress((i + len(batch)) / len(records), 
+                                                   f"Carregando lote {i//batch_size + 1}/{(len(records)-1)//batch_size + 1}")
+                                
+                                st.success(f"✅ {len(df_filtrado)} registros carregados com sucesso no Supabase!")
+                                
+                        except ImportError:
+                            st.error("❌ Biblioteca supabase-py não instalada. Execute: pip install supabase")
+                        except Exception as e:
+                            st.error(f"❌ Erro ao recarregar dados: {e}")
+                            logger.error(f"Erro ao recarregar Supabase: {e}", exc_info=True)
 
                 else:
                     st.warning("⚠️ Não foi possível renderizar o DataFrame. Exibindo CSV bruto.")
