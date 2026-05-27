@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sisprime-multi-endoscopia-backend
+    ports:
+      - "8802:8501"
+    volumes:
+      - ./backend/logs:/app/logs
+      - ./backend/outputs:/app/outputs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - endoscopia-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sisprime-multi-endoscopia-frontend
+    env_file:
+      - ./frontend/.env.local
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - endoscopia-network
+
+networks:
+  endoscopia-network:
+    driver: bridge
