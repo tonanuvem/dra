@@ -214,8 +214,8 @@ def _show_login():
         </div>
         """, unsafe_allow_html=True)
 
-        email    = st.text_input("E-mail",  placeholder="seu@email.com", label_visibility="visible")
-        password = st.text_input("Senha",   placeholder="••••••••",      type="password", label_visibility="visible")
+        email    = st.text_input("E-mail ou CPF",  placeholder="seu@email.com ou 000.000.000-00", label_visibility="visible")
+        password = st.text_input("Senha",          placeholder="••••••••", type="password", label_visibility="visible")
         submitted = st.form_submit_button("Entrar", use_container_width=True, type="primary")
 
         # Rodapé do card
@@ -232,7 +232,7 @@ def _show_login():
         return
 
     if not email or not password:
-        st.error("Preencha e-mail e senha.")
+        st.error("Preencha e-mail ou CPF e senha.")
         return
 
     supabase_url = os.getenv("SUPABASE_URL", "")
@@ -240,9 +240,30 @@ def _show_login():
         st.error("SUPABASE_URL não configurado. Verifique o arquivo .env")
         return
 
+    # ── Resolve CPF → e-mail se o input não contiver '@' e tiver 11 dígitos ──
+    login_email = email.strip()
+    _digitos = "".join(c for c in login_email if c.isdigit())
+    if "@" not in login_email and len(_digitos) == 11:
+        try:
+            _cpf_resp = (
+                _supa_service()
+                .table("profiles")
+                .select("email")
+                .eq("cpf", _digitos)
+                .maybe_single()
+                .execute()
+            )
+            if not _cpf_resp.data or not _cpf_resp.data.get("email"):
+                st.error("CPF não encontrado. Verifique o número ou use seu e-mail.")
+                return
+            login_email = _cpf_resp.data["email"]
+        except Exception as _cpf_exc:
+            st.error(f"Erro ao buscar CPF: {_cpf_exc}")
+            return
+
     try:
         resp = _supa_auth().auth.sign_in_with_password(
-            {"email": email.strip(), "password": password}
+            {"email": login_email, "password": password}
         )
         user = resp.user
 
@@ -268,7 +289,7 @@ def _show_login():
             return
 
         st.session_state["auth_user"]  = str(user.id)
-        st.session_state["auth_email"] = user.email or email
+        st.session_state["auth_email"] = user.email or login_email
         st.session_state["auth_nome"]  = profile.get("nome") or user.email or email
         st.session_state["auth_role"]  = role
         st.rerun()
@@ -276,7 +297,7 @@ def _show_login():
     except Exception as exc:
         msg = str(exc)
         if "Invalid login credentials" in msg or "invalid_credentials" in msg:
-            st.error("E-mail ou senha incorretos.")
+            st.error("E-mail/CPF ou senha incorretos.")
         else:
             st.error(f"Erro ao autenticar: {msg}")
 
