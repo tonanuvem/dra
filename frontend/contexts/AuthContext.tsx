@@ -69,17 +69,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    // Carrega sessão inicial (evita flash de tela de login ao recarregar)
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!mounted) return
-      const u = session?.user ?? null
-      setUser(u)
-      if (u) {
-        const p = await loadProfile(u.id)
-        if (mounted) setProfile(p)
-      }
+    // Garante que o loading seja liberado mesmo se getSession() travar (ex: chave inválida)
+    const fallbackTimer = setTimeout(() => {
       if (mounted) setLoading(false)
-    })
+    }, 6000)
+
+    // Carrega sessão inicial (evita flash de tela de login ao recarregar)
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        clearTimeout(fallbackTimer)
+        if (!mounted) return
+        const u = session?.user ?? null
+        setUser(u)
+        if (u) {
+          const p = await loadProfile(u.id)
+          if (mounted) setProfile(p)
+        }
+        if (mounted) setLoading(false)
+      })
+      .catch(() => {
+        clearTimeout(fallbackTimer)
+        if (mounted) setLoading(false)
+      })
 
     // Listener para login / logout / expiração de token
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -99,6 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false
+      clearTimeout(fallbackTimer)
       subscription.unsubscribe()
     }
   }, [loadProfile])
