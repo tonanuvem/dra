@@ -3166,12 +3166,18 @@ def _verificar_erros_producao(df: pd.DataFrame) -> tuple:
     def _vazio(v) -> bool:
         return not isinstance(v, str) or not v.strip()
 
-    empty = pd.Series("", index=df.index)
+    # Suporta tanto o CSV processado (colunas sem sufixo: "Data", "Paciente"...)
+    # quanto o CSV correlacionado (colunas com sufixo: "Data_PRODUCAO", ...).
+    def _col(df: pd.DataFrame, *nomes: str) -> pd.Series:
+        for n in nomes:
+            if n in df.columns:
+                return df[n]
+        return pd.Series("", index=df.index)
 
-    mask_data    = df.get("Data_PRODUCAO",          empty).map(_data_invalida)
-    mask_pac     = df.get("Paciente_PRODUCAO",       empty).map(_vazio)
-    mask_nratend = df.get("NrAtendimento_PRODUCAO",  empty).map(_vazio)
-    mask_proc    = df.get("Procedimento_PRODUCAO",   empty).map(_vazio)
+    mask_data    = _col(df, "Data_PRODUCAO",         "Data").map(_data_invalida)
+    mask_pac     = _col(df, "Paciente_PRODUCAO",      "Paciente").map(_vazio)
+    mask_nratend = _col(df, "NrAtendimento_PRODUCAO", "NrAtendimento").map(_vazio)
+    mask_proc    = _col(df, "Procedimento_PRODUCAO",  "Procedimento").map(_vazio)
 
     mask_qualquer = mask_data | mask_pac | mask_nratend | mask_proc
 
@@ -4451,14 +4457,17 @@ def main():
                         _ce3.metric("🔢 NrAtendimento vazio",   _resumo_err["nratendimento_vazio"])
                         _ce4.metric("🏥 Procedimento vazio",    _resumo_err["procedimento_vazio"])
 
+                        # Colunas de dados: aceita tanto "Data" quanto "Data_PRODUCAO"
+                        _cols_dados = [
+                            next((c for c in [cn, cn + "_PRODUCAO"] if c in _df_erros.columns), None)
+                            for cn in ["Data", "Paciente", "NrAtendimento", "Procedimento", "AbaOrigemDados"]
+                        ]
                         _cols_exib = [
-                            c for c in [
-                                "Data_PRODUCAO", "Paciente_PRODUCAO",
-                                "NrAtendimento_PRODUCAO", "Procedimento_PRODUCAO",
-                                "AbaOrigemDados_PRODUCAO",
-                                "❌ Data inválida", "❌ Paciente vazio",
-                                "❌ NrAtendimento vazio", "❌ Procedimento vazio",
-                            ] if c in _df_erros.columns
+                            c for c in
+                            [c for c in _cols_dados if c] +
+                            ["❌ Data inválida", "❌ Paciente vazio",
+                             "❌ NrAtendimento vazio", "❌ Procedimento vazio"]
+                            if c in _df_erros.columns
                         ]
                         st.dataframe(_df_erros[_cols_exib], use_container_width=True)
 
