@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { PROTECTED_ROUTES } from '@/lib/permissions'
 import type { Permissions } from '@/lib/permissions'
 
@@ -28,6 +29,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     // Já autenticado tentando acessar /login → /dashboard
     if (user && isPublic) {
       router.replace('/dashboard')
+      return
+    }
+
+    // Autenticado mas profile não carregou (ex: apikey inválida → 401) → limpa sessão
+    if (user && !profile) {
+      supabase.auth.signOut()
+      router.replace('/login')
       return
     }
 
