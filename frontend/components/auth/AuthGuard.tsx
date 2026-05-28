@@ -62,8 +62,14 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return <>{children}</>
   }
 
-  // Rota protegida: renderiza só se autenticado e ativo
-  if (!user || !profile || !profile.ativo) return null
+  // Rota protegida: mantém spinner enquanto o redirect para /login está pendente
+  if (!user || !profile || !profile.ativo) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    )
+  }
 
   return <>{children}</>
 }
