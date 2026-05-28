@@ -89,22 +89,145 @@ def _logout():
 
 
 def _show_login():
-    """Tela de login — renderizada no lugar do app quando não autenticado."""
-    st.markdown(
-        "<div style='max-width:420px;margin:80px auto 0;'>"
-        "<h2 style='text-align:center;'>🔬 Endoscopia</h2>"
-        "<p style='text-align:center;color:#6b7280;margin-bottom:24px;'>"
-        "Auditoria de Faturamento — painel de análise</p>",
-        unsafe_allow_html=True,
-    )
+    """Tela de login — visual alinhado ao frontend Next.js (slate-900 + card branco)."""
 
+    # ── CSS global ────────────────────────────────────────────
+    st.markdown("""
+    <style>
+    /* Fundo escuro slate-900 */
+    .stApp { background-color: #0f172a !important; }
+    [data-testid="stHeader"]    { background-color: #0f172a !important; box-shadow: none !important; }
+    [data-testid="stToolbar"],
+    [data-testid="stDecoration"],
+    #MainMenu, footer           { display: none !important; }
+
+    /* Container centralizado, largura do card */
+    .main .block-container {
+        max-width: 400px !important;
+        padding: 5rem 0 2rem !important;
+        margin: 0 auto !important;
+    }
+
+    /* Card branco */
+    [data-testid="stForm"] {
+        background: #ffffff !important;
+        border-radius: 16px !important;
+        padding: 2rem 2rem 1.5rem !important;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.55) !important;
+        border: none !important;
+    }
+
+    /* Labels dos campos */
+    [data-testid="stForm"] .stTextInput label p {
+        color: #374151 !important;
+        font-size: 14px !important;
+        font-weight: 500 !important;
+    }
+
+    /* Inputs */
+    [data-testid="stForm"] .stTextInput input {
+        border: 1px solid #d1d5db !important;
+        border-radius: 8px !important;
+        font-size: 14px !important;
+        color: #111827 !important;
+        background: #ffffff !important;
+        padding: 10px 12px !important;
+    }
+    [data-testid="stForm"] .stTextInput input:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15) !important;
+        outline: none !important;
+    }
+    [data-testid="stForm"] .stTextInput input::placeholder {
+        color: #9ca3af !important;
+    }
+
+    /* Botão Entrar */
+    [data-testid="stForm"] .stFormSubmitButton > button {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        padding: 0.65rem 1rem !important;
+        transition: background-color 0.15s ease !important;
+        letter-spacing: 0.01em !important;
+    }
+    [data-testid="stForm"] .stFormSubmitButton > button:hover {
+        background-color: #1d4ed8 !important;
+    }
+    [data-testid="stForm"] .stFormSubmitButton > button:active {
+        background-color: #1e40af !important;
+    }
+
+    /* Mensagem de erro abaixo do card */
+    [data-testid="stAlert"] {
+        border-radius: 8px !important;
+        font-size: 14px !important;
+        margin-top: 12px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Logo (fora do card, sobre o fundo escuro) ─────────────
+    st.markdown("""
+    <div style="
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 28px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    ">
+        <div style="
+            width: 48px; height: 48px;
+            background: #2563eb;
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
+            flex-shrink: 0;
+        ">
+            <span style="font-size: 22px; line-height: 1;">🩺</span>
+        </div>
+        <div>
+            <p style="color:#f1f5f9; font-weight:700; font-size:18px;
+                      margin:0; line-height:1.25;">Endoscopia</p>
+            <p style="color:#94a3b8; font-size:13px;
+                      margin:0; line-height:1.3;">Auditoria de Faturamento</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Formulário (renderizado como card branco via CSS) ─────
     with st.form("login_form", clear_on_submit=False):
-        email    = st.text_input("E-mail", placeholder="email@exemplo.com")
-        password = st.text_input("Senha", type="password")
+        # Título dentro do card
+        st.markdown("""
+        <div style="
+            margin-bottom: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        ">
+            <h2 style="font-size:20px; font-weight:700; color:#111827;
+                       margin:0 0 4px; padding:0; line-height:1.3;">Entrar</h2>
+            <p  style="font-size:14px; color:#6b7280;
+                       margin:0; padding:0;">Acesse sua conta para continuar</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        email    = st.text_input("E-mail",  placeholder="seu@email.com", label_visibility="visible")
+        password = st.text_input("Senha",   placeholder="••••••••",      type="password", label_visibility="visible")
         submitted = st.form_submit_button("Entrar", use_container_width=True, type="primary")
 
-    st.markdown("</div>", unsafe_allow_html=True)
+        # Rodapé do card
+        st.markdown("""
+        <p style="
+            font-size: 11px; color: #9ca3af; text-align: center;
+            margin: 14px 0 0; padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        ">Acesso restrito — somente usuários autorizados</p>
+        """, unsafe_allow_html=True)
 
+    # ── Lógica de autenticação ────────────────────────────────
     if not submitted:
         return
 
