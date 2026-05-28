@@ -156,6 +156,7 @@ function EditUserModal({
   onClose: () => void
   onSaved: () => void
 }) {
+  const { user: currentUser, signOut } = useAuth()
   const [role, setRole] = useState<Role>(user.role)
   const [ativo, setAtivo] = useState(user.ativo)
   const [nome, setNome] = useState(user.nome ?? '')
@@ -172,6 +173,8 @@ function EditUserModal({
     }
     setSaving(true)
     setError(null)
+    // Detecta se o admin está alterando sua própria senha
+    const isOwnPasswordChange = changePasswordMode && !!newPassword.trim() && user.id === currentUser?.id
     try {
       const headers = await authHeaders()
       const payload: Record<string, unknown> = { id: user.id, role, ativo, nome }
@@ -183,6 +186,17 @@ function EditUserModal({
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Erro ao salvar')
+
+      // Ao trocar a própria senha, o Supabase invalida o JWT atual.
+      // Tentamos renovar a sessão; se falhar, saímos graciosamente.
+      if (isOwnPasswordChange) {
+        const { error: refreshError } = await supabase.auth.refreshSession()
+        if (refreshError) {
+          await signOut()
+          return // AuthGuard vai redirecionar para login
+        }
+      }
+
       onSaved()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
@@ -586,7 +600,13 @@ function UsersTab() {
     setError(null)
     try {
       const headers = await authHeaders()
-      const res = await fetch('/api/admin/users', { headers })
+      let res: Response = await fetch('/api/admin/users', { headers })
+      // Retry único após refresh de sessão (ex: token invalidado após troca de senha)
+      if (res.status === 403) {
+        await supabase.auth.refreshSession()
+        const retryHeaders = await authHeaders()
+        res = await fetch('/api/admin/users', { headers: retryHeaders })
+      }
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Erro ao carregar usuários')
       setUsers(json.users ?? [])

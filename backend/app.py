@@ -4707,28 +4707,23 @@ def main():
                     status_col = df_final.get("StatusCorrelacao", pd.Series(dtype=str))
                     mm = df_final.get("MetodoMatch", pd.Series(dtype=str)).fillna("")
                     # Correlacionados = qualquer status que comece com CORRELACIONADO
-                    n_correlacionado  = status_col.str.upper().str.startswith("CORRELACIONADO").sum()
-                    n_divergencia     = status_col.str.upper().str.contains("DIVERGENCIA_VALOR").sum()
-                    # Glosa: CORRELACIONADO onde ValorLiberado_REPASSE < 95% do ValorEstimado_TUSS
-                    _vlrep = df_final.get("ValorLiberado_REPASSE", pd.Series(dtype=str)).fillna("").map(_extrair_valor_numerico)
-                    _vlest = df_final.get("ValorEstimado_TUSS",    pd.Series(dtype=str)).fillna("").map(_extrair_valor_numerico)
-                    n_glosa = int((status_col.str.upper().str.startswith("CORRELACIONADO") & (_vlest > 0) & (_vlrep < _vlest * 0.95)).sum())
-                    n_nao_faturado    = (status_col.str.upper() == "NAO_FATURADO_NO_REPASSE").sum()
-                    n_proc_divergente = mm.str.contains("PROCEDIMENTO_DIVERGENTE").sum()
+                    n_correlacionado           = status_col.str.upper().str.startswith("CORRELACIONADO").sum()
+                    n_repasse_nao_identificado = (status_col.str.upper() == "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO").sum()
+                    n_fora_periodo             = (status_col.str.upper() == "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO").sum()
+                    n_nao_faturado             = (status_col.str.upper() == "NAO_FATURADO_NO_REPASSE").sum()
+                    n_proc_divergente          = mm.str.contains("PROCEDIMENTO_DIVERGENTE").sum()
 
-                    col_m1.metric("📄 Total de Linhas",         total_linhas)
-                    col_m2.metric("✅ Correlacionados",          n_correlacionado)
-                    col_m3.metric("⚠️ Divergências de Valor",    int(n_divergencia))
-                    col_m4.metric("🚫 Glosas",                   int(n_glosa))
-                    col_m5.metric("❌ Não Faturados",             int(n_nao_faturado))
+                    col_m1.metric("📄 Total de Linhas",                   total_linhas)
+                    col_m2.metric("✅ Correlacionados",                    n_correlacionado)
+                    col_m3.metric("⚠️ Repasse não identificado na produção", int(n_repasse_nao_identificado))
+                    col_m4.metric("📅 Repasse fora do período de produção",  int(n_fora_periodo))
+                    col_m5.metric("❌ Não Faturados",                       int(n_nao_faturado))
 
                     # Métricas detalhadas de correlação
                     st.markdown("---")
                     st.markdown("### 📊 Resultados da Correlação")
 
-                    n_repasse_nao_identificado = (status_col.str.upper() == "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO").sum()
-                    n_companion               = (mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL").sum()
-                    n_fora_periodo            = (status_col.str.upper() == "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO").sum()
+                    n_companion = (mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL").sum()
 
                     # Contagem por MetodoMatch (inclui sufixo _PROCEDIMENTO_DIVERGENTE quando aplicável)
                     n_m1  = mm.str.startswith("1_NOME_COMPLETO_DATA_PROCEDIMENTO").sum()
@@ -5160,7 +5155,8 @@ def main():
                                 lote_novo = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                                 # ── Prepara registros ────────────────────────────────
-                                # Envia apenas lote_processamento + 46 campos de dados.
+                                # Usa df_final (todos os dados, sem filtros de UI) para
+                                # garantir que o CSV completo seja carregado no Supabase.
                                 # O trigger BEFORE INSERT do banco cuida de:
                                 #   • hash_conteudo, is_duplicata, id_original
                                 #   • carry-over de decisao_humana/revisado_em/notas_revisor
@@ -5175,12 +5171,30 @@ def main():
                                     "ativo", "desativado_em", "desativado_por",
                                     "motivo_desativacao", "rollback_operacao_id",
                                 }
-                                _records_raw = df_filtrado \
-                                    .where(df_filtrado.notna(), other=None) \
+                                _records_raw = df_final \
+                                    .where(df_final.notna(), other=None) \
                                     .to_dict("records")
+                                _DATE_COLS = {"Data_PRODUCAO", "Data_REPASSE"}
+
+                                def _fmt_date_iso(v):
+                                    if not v or not isinstance(v, str):
+                                        return v
+                                    v = v.strip()
+                                    if not v:
+                                        return None
+                                    for fmt in ("%d/%m/%Y", "%d-%m-%Y"):
+                                        try:
+                                            return datetime.strptime(v, fmt).strftime("%Y-%m-%d")
+                                        except ValueError:
+                                            pass
+                                    return v  # já está em outro formato, deixa passar
+
                                 records = []
                                 for _r in _records_raw:
                                     _row = {k: v for k, v in _r.items() if k not in _COLUNAS_DB}
+                                    for _dc in _DATE_COLS:
+                                        if _dc in _row:
+                                            _row[_dc] = _fmt_date_iso(_row[_dc])
                                     _row["lote_processamento"] = lote_novo
                                     records.append(_row)
 
