@@ -9,6 +9,7 @@ const SELECT_COLS = [
   'lote_processamento',
   'criado_em',
   'is_duplicata',
+  'ativo',
   'decisao_humana',
   'Data_PRODUCAO',
   'AbaOrigemDados_PRODUCAO',
@@ -21,8 +22,19 @@ const SELECT_COLS = [
 
 // ── Tipos ──────────────────────────────────────────────────────
 
+export interface LoteMeta {
+  lote_id:              string
+  status:               'ativo' | 'invalidado'
+  invalidado_em:        string | null
+  invalidado_por:       string | null
+  motivo_invalidade:    string | null
+  rollback_operacao_id: string | null
+}
+
 export interface LoteStats {
   lote_processamento: string
+  /** Status administrativo (de lotes_carga) */
+  status: 'ativo' | 'invalidado'
   /** Timestamp de quando o lote foi inserido no Supabase */
   carregado_em: string
   /** Total de linhas incluindo duplicatas */
@@ -31,24 +43,32 @@ export interface LoteStats {
   validos: number
   /** Linhas duplicadas (is_duplicata = true) */
   duplicatas: number
-  /** Linhas revisadas pelo auditor (decisao_humana IS NOT NULL, is_duplicata=false) */
-  revisados: number
-  /** Linhas confirmadas (decisao_humana = 'confirmado') */
-  confirmados: number
-  /** Linhas desvinculadas (decisao_humana = 'desvinculado') */
-  desvinculados: number
-  /** Linhas válidas ainda sem revisão */
+  /**
+   * Linhas válidas que foram desativadas pelo trigger de versionamento
+   * (is_duplicata=false, ativo=false — supersedidas por um lote mais recente).
+   */
+  supersedidos: number
+  /** Linhas válidas e ativas ainda sem revisão */
   pendentes: number
-  /** Abas de origem formatadas, ex: ["Jan/25", "Fev/25", "Mar/25"] */
+  /** Linhas revisadas pelo auditor (decisao_humana IS NOT NULL, ativo=true) */
+  revisados: number
+  /** Linhas confirmadas (decisao_humana = 'confirmado', ativo=true) */
+  confirmados: number
+  /** Linhas desvinculadas (decisao_humana = 'desvinculado', ativo=true) */
+  desvinculados: number
+  /** Abas de origem formatadas, ex: ["Jan/25", "Fev/25"] */
   periodos: string[]
-  /** Distribuição de StatusCorrelacao entre linhas válidas */
+  /** Distribuição de StatusCorrelacao entre linhas válidas e ativas */
   distribuicaoStatus: Record<string, number>
-  /** Soma de ValorLiberado_REPASSE (linhas válidas correlacionadas) */
+  /** Soma de ValorLiberado_REPASSE (linhas válidas ativas) */
   valorPago: number
-  /** Soma de ValorEstimado_TUSS (linhas válidas com estimativa) */
+  /** Soma de ValorEstimado_TUSS (linhas válidas ativas) */
   valorEstimado: number
-  /** Indica se é o lote mais recente */
+  /** Indica se é o lote ativo mais recente */
   isAtual: boolean
+  /** Metadados de invalidação (preenchidos quando status = 'invalidado') */
+  invalidadoEm: string | null
+  motivoInvalidade: string | null
 }
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -64,13 +84,11 @@ const MESES_PT: Record<string, string> = {
  * Extrai um rótulo de período legível de AbaOrigemDados_PRODUCAO.
  * "ABA: JANEIRO 2025" → "Jan/25"
  * "ABA: 202501"       → "Jan/25"
- * Retorna null se não reconhecer o formato.
  */
 function parsePeriodo(aba: string | null): string | null {
   if (!aba) return null
   const upper = aba.toUpperCase().replace('ABA:', '').trim()
 
-  // Formato "YYYYMM"
   const numMatch = upper.match(/^(\d{4})(\d{2})$/)
   if (numMatch) {
     const ano = numMatch[1].slice(2)
@@ -79,7 +97,6 @@ function parsePeriodo(aba: string | null): string | null {
     return mes >= 1 && mes <= 12 ? `${mesNomes[mes - 1]}/${ano}` : null
   }
 
-  // Formato "MÊS YYYY"
   const textMatch = upper.match(/^([A-ZÁÉÍÓÚÃÂÊÔÇ]+)\s+(\d{4})$/)
   if (textMatch) {
     const mesLabel = MESES_PT[textMatch[1]] ?? null
@@ -115,107 +132,140 @@ export function formatLote(lote: string): string {
 // ── Hook principal ─────────────────────────────────────────────
 
 export function useCarregamentos() {
-  const [lotes, setLotes]   = useState<LoteStats[]>([])
+  const [lotes, setLotes]     = useState<LoteStats[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState<string | null>(null)
+  const [error, setError]     = useState<string | null>(null)
 
   async function load() {
-      setLoading(true)
-      setError(null)
-      try {
-        // Carrega todas as linhas com as colunas mínimas
-        const BATCH = 1000
-        let allRows: Array<Record<string, unknown>> = []
-        let from = 0
-        while (true) {
-          const { data, error: err } = await supabase
-            .from(TABLES.correlacao)
-            .select(SELECT_COLS)
-            .range(from, from + BATCH - 1)
-          if (err) throw err
-          if (!data || data.length === 0) break
-          allRows = allRows.concat(data as Array<Record<string, unknown>>)
-          if (data.length < BATCH) break
-          from += BATCH
-        }
+    setLoading(true)
+    setError(null)
+    try {
+      // ── 1. Metadados administrativos (lotes_carga) ───────────
+      // Tabela leve — uma linha por lote. Fornece status e info
+      // de invalidação sem precisar varrer todos os registros.
+      const { data: metaRows } = await supabase
+        .from('lotes_carga')
+        .select('lote_id, status, invalidado_em, invalidado_por, motivo_invalidade, rollback_operacao_id')
 
-        if (allRows.length === 0) {
-          setLotes([])
-          return
-        }
+      const metaByLoteId = new Map<string, LoteMeta>(
+        (metaRows ?? []).map(m => [m.lote_id as string, m as LoteMeta])
+      )
 
-        // Agrupa por lote_processamento
-        const byLote = new Map<string, typeof allRows>()
-        for (const row of allRows) {
-          const lote = (row.lote_processamento as string) ?? 'desconhecido'
-          if (!byLote.has(lote)) byLote.set(lote, [])
-          byLote.get(lote)!.push(row)
-        }
-
-        // Calcula estatísticas por lote
-        const lotesOrdenados = [...byLote.keys()].sort().reverse() // mais recente primeiro
-
-        const result: LoteStats[] = lotesOrdenados.map((lote, idx) => {
-          const rows = byLote.get(lote)!
-
-          const validos     = rows.filter(r => !r.is_duplicata)
-          const duplicatas  = rows.filter(r =>  r.is_duplicata)
-          const revisados   = validos.filter(r => r.decisao_humana != null)
-          const confirmados = validos.filter(r => r.decisao_humana === 'confirmado')
-          const desvinculados = validos.filter(r => r.decisao_humana === 'desvinculado')
-
-          // Períodos (abas de origem da PRODUÇÃO)
-          const periodoSet = new Set<string>()
-          for (const r of validos) {
-            const p = parsePeriodo(r['AbaOrigemDados_PRODUCAO'] as string)
-            if (p) periodoSet.add(p)
-          }
-
-          // Distribuição de StatusCorrelacao
-          const distStatus: Record<string, number> = {}
-          for (const r of validos) {
-            const s = (r.StatusCorrelacao as string) ?? 'DESCONHECIDO'
-            distStatus[s] = (distStatus[s] ?? 0) + 1
-          }
-
-          // Valores financeiros
-          const valorPago = validos.reduce(
-            (acc, r) => acc + (Number(r['ValorLiberado_REPASSE']) || 0), 0
-          )
-          const valorEstimado = validos.reduce(
-            (acc, r) => acc + (Number(r['ValorEstimado_TUSS']) || 0), 0
-          )
-
-          // criado_em mínimo como timestamp de carregamento
-          const carregado_em = rows
-            .map(r => r.criado_em as string)
-            .filter(Boolean)
-            .sort()[0] ?? lote
-
-          return {
-            lote_processamento: lote,
-            carregado_em,
-            total:       rows.length,
-            validos:     validos.length,
-            duplicatas:  duplicatas.length,
-            revisados:   revisados.length,
-            confirmados: confirmados.length,
-            desvinculados: desvinculados.length,
-            pendentes:   validos.length - revisados.length,
-            periodos:    sortPeriodos([...periodoSet]),
-            distribuicaoStatus: distStatus,
-            valorPago,
-            valorEstimado,
-            isAtual: idx === 0,
-          }
-        })
-
-        setLotes(result)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Erro ao carregar lotes')
-      } finally {
-        setLoading(false)
+      // ── 2. Estatísticas dos registros (correlacao_endoscopia) ─
+      // Carrega as colunas mínimas em batches de 1000.
+      // Inclui TODOS os registros do lote (ativo=true e false)
+      // para mostrar o estado histórico completo no card de gestão.
+      const BATCH = 1000
+      let allRows: Array<Record<string, unknown>> = []
+      let from = 0
+      while (true) {
+        const { data, error: err } = await supabase
+          .from(TABLES.correlacao)
+          .select(SELECT_COLS)
+          .range(from, from + BATCH - 1)
+        if (err) throw err
+        if (!data || data.length === 0) break
+        allRows = allRows.concat(data as Array<Record<string, unknown>>)
+        if (data.length < BATCH) break
+        from += BATCH
       }
+
+      if (allRows.length === 0) {
+        setLotes([])
+        return
+      }
+
+      // ── 3. Agrupa por lote_processamento ─────────────────────
+      const byLote = new Map<string, typeof allRows>()
+      for (const row of allRows) {
+        const lote = (row.lote_processamento as string) ?? 'desconhecido'
+        if (!byLote.has(lote)) byLote.set(lote, [])
+        byLote.get(lote)!.push(row)
+      }
+
+      // Ordena: mais recente primeiro (lexicográfico funciona no formato YYYYMMDD_HHmmss)
+      const lotesOrdenados = [...byLote.keys()].sort().reverse()
+
+      // ── 4. Determina qual é o lote ativo mais recente ─────────
+      const primeiroAtivo = lotesOrdenados.find(lote => {
+        const meta = metaByLoteId.get(lote)
+        // Se não tem entrada em lotes_carga ainda (dados pré-migration), assume ativo
+        return !meta || meta.status === 'ativo'
+      })
+
+      // ── 5. Calcula estatísticas por lote ──────────────────────
+      const result: LoteStats[] = lotesOrdenados.map(lote => {
+        const rows = byLote.get(lote)!
+        const meta = metaByLoteId.get(lote)
+
+        const validos         = rows.filter(r => !r.is_duplicata)
+        const duplicatas      = rows.filter(r =>  r.is_duplicata)
+
+        // Linhas válidas supersedidas pelo trigger de versionamento
+        const supersedidos    = validos.filter(r => r.ativo === false)
+
+        // Linhas válidas e ativas (base para métricas de revisão)
+        const validosAtivos   = validos.filter(r => r.ativo !== false)
+        const revisados       = validosAtivos.filter(r => r.decisao_humana != null)
+        const confirmados     = validosAtivos.filter(r => r.decisao_humana === 'confirmado')
+        const desvinculados   = validosAtivos.filter(r => r.decisao_humana === 'desvinculado')
+
+        // Períodos (das linhas ativas da PRODUÇÃO)
+        const periodoSet = new Set<string>()
+        for (const r of validosAtivos) {
+          const p = parsePeriodo(r['AbaOrigemDados_PRODUCAO'] as string)
+          if (p) periodoSet.add(p)
+        }
+
+        // Distribuição de StatusCorrelacao (apenas válidos e ativos)
+        const distStatus: Record<string, number> = {}
+        for (const r of validosAtivos) {
+          const s = (r.StatusCorrelacao as string) ?? 'DESCONHECIDO'
+          distStatus[s] = (distStatus[s] ?? 0) + 1
+        }
+
+        // Valores financeiros (apenas válidos e ativos)
+        const valorPago = validosAtivos.reduce(
+          (acc, r) => acc + (Number(r['ValorLiberado_REPASSE']) || 0), 0
+        )
+        const valorEstimado = validosAtivos.reduce(
+          (acc, r) => acc + (Number(r['ValorEstimado_TUSS']) || 0), 0
+        )
+
+        // Timestamp de carregamento: mínimo de criado_em
+        const carregado_em = rows
+          .map(r => r.criado_em as string)
+          .filter(Boolean)
+          .sort()[0] ?? lote
+
+        return {
+          lote_processamento: lote,
+          status:             (meta?.status ?? 'ativo') as 'ativo' | 'invalidado',
+          carregado_em,
+          total:              rows.length,
+          validos:            validos.length,
+          duplicatas:         duplicatas.length,
+          supersedidos:       supersedidos.length,
+          pendentes:          validosAtivos.length - revisados.length,
+          revisados:          revisados.length,
+          confirmados:        confirmados.length,
+          desvinculados:      desvinculados.length,
+          periodos:           sortPeriodos([...periodoSet]),
+          distribuicaoStatus: distStatus,
+          valorPago,
+          valorEstimado,
+          isAtual:            lote === primeiroAtivo,
+          invalidadoEm:       meta?.invalidado_em ?? null,
+          motivoInvalidade:   meta?.motivo_invalidade ?? null,
+        }
+      })
+
+      setLotes(result)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erro ao carregar lotes')
+    } finally {
+      setLoading(false)
+    }
   }
 
   useEffect(() => { load() }, [])

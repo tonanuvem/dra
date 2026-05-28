@@ -43,6 +43,13 @@ export interface Correlacao {
   id_original: string | null
   /** Timestamp de inserção no banco */
   criado_em: string
+  // ── Soft delete (rollback-migration.sql) ──────────────────
+  /** false = desativado por trigger de versionamento ou invalidação manual */
+  ativo: boolean
+  desativado_em: string | null
+  desativado_por: string | null
+  motivo_desativacao: string | null
+  rollback_operacao_id: string | null
   ChaveCorrelacao: string
   QTD_PRODUCAO: number | null
   Data_PRODUCAO: string | null

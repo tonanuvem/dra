@@ -27,8 +27,8 @@ export interface CorrelacoesFilter {
 /** Aplica cláusulas WHERE em uma query Supabase já iniciada (tipada como any) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyFilters(q: any, filter: CorrelacoesFilter): any {
-  // Sempre exclui duplicatas da auditoria
-  q = q.eq('is_duplicata', false)
+  // Sempre exclui duplicatas e registros desativados da auditoria
+  q = q.eq('is_duplicata', false).eq('ativo', true)
   if (filter.statusCorrelacao?.length)  q = q.in('StatusCorrelacao', filter.statusCorrelacao)
   if (filter.statusTUSS?.length)        q = q.in('StatusTUSS', filter.statusTUSS)
   if (filter.metodoMatch?.length)       q = q.in('MetodoMatch', filter.metodoMatch)
@@ -133,6 +133,7 @@ export function useDashboardStats() {
             .from(TABLE)
             .select('StatusCorrelacao, ValorEstimado_TUSS, ValorLiberado_REPASSE, MetodoMatch, StatusTUSS, CodigosTUSS_Esperados')
             .eq('is_duplicata', false)
+            .eq('ativo', true)
             .range(from, from + batchSize - 1)
 
           if (error || !batch || batch.length === 0) break

@@ -5033,32 +5033,24 @@ def main():
                                         st.error(f"❌ Tabela 'correlacao_endoscopia' não existe ou não está acessível: {e}")
                                         st.stop()
                                 
-                                # ── Identifica lotes existentes ANTES de inserir ─────
-                                # Necessário para deletá-los DEPOIS (preserva decisões
-                                # humanas via trigger carry-over durante o INSERT)
-                                with st.spinner("🔍 Verificando lotes existentes..."):
-                                    _lotes_resp = supabase \
-                                        .table("correlacao_endoscopia") \
-                                        .select("lote_processamento") \
-                                        .execute()
-                                    _lotes_anteriores = list({
-                                        r["lote_processamento"]
-                                        for r in (_lotes_resp.data or [])
-                                        if r.get("lote_processamento")
-                                    })
-
                                 # ── Define identificador do novo lote ────────────────
                                 lote_novo = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                                 # ── Prepara registros ────────────────────────────────
                                 # Envia apenas lote_processamento + 46 campos de dados.
-                                # O trigger BEFORE INSERT do banco calcula automaticamente:
-                                #   hash_conteudo, is_duplicata, id_original
-                                # E faz carry-over de:
-                                #   decisao_humana, revisado_em, notas_revisor
+                                # O trigger BEFORE INSERT do banco cuida de:
+                                #   • hash_conteudo, is_duplicata, id_original
+                                #   • carry-over de decisao_humana/revisado_em/notas_revisor
+                                #   • versionamento: desativa versão anterior do mesmo
+                                #     ChaveCorrelacao (se conteúdo mudou entre lotes)
+                                # Campos de soft-delete e controle de lote também são
+                                # exclusividade do banco — não enviar pelo app.py.
                                 _COLUNAS_DB = {
                                     "id", "hash_conteudo", "is_duplicata", "id_original",
                                     "criado_em", "decisao_humana", "revisado_em", "notas_revisor",
+                                    # soft-delete (rollback-migration.sql)
+                                    "ativo", "desativado_em", "desativado_por",
+                                    "motivo_desativacao", "rollback_operacao_id",
                                 }
                                 _records_raw = df_filtrado \
                                     .where(df_filtrado.notna(), other=None) \
@@ -5069,10 +5061,24 @@ def main():
                                     _row["lote_processamento"] = lote_novo
                                     records.append(_row)
 
+                                # ── Registra o lote em lotes_carga (antes do INSERT) ─
+                                # A linha em lotes_carga serve como ponto de controle:
+                                # o frontend usa para exibir status e permitir invalidação.
+                                supabase \
+                                    .table("lotes_carga") \
+                                    .insert({
+                                        "lote_id":        lote_novo,
+                                        "status":         "ativo",
+                                        "total_inserido": len(records),
+                                    }) \
+                                    .execute()
+
                                 # ── INSERT novo lote ─────────────────────────────────
                                 # upsert com ignore_duplicates=True equivale a
                                 # ON CONFLICT (lote_processamento, hash_conteudo) DO NOTHING,
-                                # silenciando duplicatas intra-batch detectadas pelo trigger.
+                                # silenciando duplicatas intra-batch.
+                                # NÃO há mais DELETE de lotes anteriores: o trigger de
+                                # versionamento (bloco D) desativa registros supersedidos.
                                 with st.spinner(f"📤 Inserindo {len(records):,} registros (lote {lote_novo})..."):
                                     _batch_size = 500
                                     _n_batches  = -(-len(records) // _batch_size)  # ceil division
@@ -5091,27 +5097,39 @@ def main():
                                             f"Inserindo lote {_i // _batch_size + 1}/{_n_batches}"
                                         )
 
-                                # ── DELETE lotes anteriores APÓS o INSERT ────────────
-                                # Ordem crítica: o trigger já fez carry-over das decisões
-                                # humanas durante o INSERT acima.
-                                if _lotes_anteriores:
-                                    with st.spinner(
-                                        f"🗑️ Removendo {len(_lotes_anteriores)} lote(s) anterior(es)..."
-                                    ):
-                                        for _lote_ant in _lotes_anteriores:
-                                            supabase \
-                                                .table("correlacao_endoscopia") \
-                                                .delete() \
-                                                .eq("lote_processamento", _lote_ant) \
-                                                .execute()
+                                # ── Atualiza contagens em lotes_carga ────────────────
+                                # Consulta o banco para obter o total real de válidos e
+                                # duplicatas (trigger pode ter ajustado is_duplicata).
+                                try:
+                                    _cnt_resp = supabase \
+                                        .table("correlacao_endoscopia") \
+                                        .select("is_duplicata", count="exact") \
+                                        .eq("lote_processamento", lote_novo) \
+                                        .execute()
+                                    _total_lote    = _cnt_resp.count or len(records)
+                                    _cnt_dup_resp  = supabase \
+                                        .table("correlacao_endoscopia") \
+                                        .select("id", count="exact") \
+                                        .eq("lote_processamento", lote_novo) \
+                                        .eq("is_duplicata", True) \
+                                        .execute()
+                                    _total_dup     = _cnt_dup_resp.count or 0
+                                    _total_validos = _total_lote - _total_dup
+                                    supabase \
+                                        .table("lotes_carga") \
+                                        .update({
+                                            "total_inserido":  _total_lote,
+                                            "total_validos":   _total_validos,
+                                            "total_duplicatas": _total_dup,
+                                        }) \
+                                        .eq("lote_id", lote_novo) \
+                                        .execute()
+                                except Exception:
+                                    pass  # contagens são informativas — não bloquear o fluxo
 
-                                _msg_lotes = (
-                                    f"\n🗑️ {len(_lotes_anteriores)} lote(s) anterior(es) removido(s)."
-                                    if _lotes_anteriores else ""
-                                )
                                 st.success(
                                     f"✅ **{len(records):,} registros** carregados com sucesso!\n\n"
-                                    f"🏷️ Lote: `{lote_novo}`{_msg_lotes}"
+                                    f"🏷️ Lote: `{lote_novo}`"
                                 )
                                 
                         except ImportError:
