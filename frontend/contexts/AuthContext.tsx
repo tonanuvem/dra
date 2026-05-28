@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react'
 import type { User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { ROLE_PERMISSIONS } from '@/lib/permissions'
@@ -102,8 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // renovado automaticamente pelo Supabase (ex: ao voltar para a aba).
         // O usuário e o profile não mudam — NÃO atualizamos NADA para evitar
         // re-renderizações desnecessárias que causam o spinner de loading.
-        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-          // Não faz nada - o token é atualizado internamente pelo Supabase
+        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
           return
         }
 
@@ -140,7 +139,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const role        = profile?.role ?? null
-  const permissions = role ? ROLE_PERMISSIONS[role] : null
+  const permissions = useMemo(() => role ? ROLE_PERMISSIONS[role] : null, [role])
 
   return (
     <AuthContext.Provider value={{

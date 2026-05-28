@@ -60,7 +60,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
         }
       }
     }
-  }, [user, profile, permissions, loading, pathname, router])
+  }, [user, profile, permissions, loading, pathname])
 
   // Tela de carregamento inicial (evita flash de conteúdo não autorizado)
   if (loading) {
