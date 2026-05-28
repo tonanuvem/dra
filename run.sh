@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Verificar se .env.local existe no frontend
-if [ ! -f "./frontend/.env.local" ]; then
-  echo "❌ ERRO: Arquivo ./frontend/.env.local não encontrado!"
+# Verificar se .env existe na raiz do projeto
+if [ ! -f "./.env" ]; then
+  echo "❌ ERRO: Arquivo .env não encontrado!"
   echo ""
   echo "Por favor, crie o arquivo a partir do exemplo:"
-  echo "  cp ./frontend/.env.example ./frontend/.env.local"
+  echo "  cp .env.example .env"
   echo ""
   echo "Depois edite o arquivo com suas credenciais do Supabase."
   exit 1
