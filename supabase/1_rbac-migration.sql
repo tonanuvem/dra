@@ -189,7 +189,10 @@ CREATE TRIGGER profiles_updated_at
 --    tokens ou outros dados sensíveis de auth.users
 -- ─────────────────────────────────────────────────────────────
 
-CREATE OR REPLACE VIEW public.user_profiles_view AS
+-- DROP antes de recriar: CREATE OR REPLACE não permite mudar ordem/inserir colunas no meio.
+-- DROP VIEW IF EXISTS é idempotente — não falha se a view não existir.
+DROP VIEW IF EXISTS public.user_profiles_view;
+CREATE VIEW public.user_profiles_view AS
   SELECT
     p.id,
     p.email,
