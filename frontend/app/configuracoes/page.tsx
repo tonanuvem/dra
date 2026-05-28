@@ -161,16 +161,25 @@ function EditUserModal({
   const [nome, setNome] = useState(user.nome ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [changePasswordMode, setChangePasswordMode] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [showNewPassword, setShowNewPassword] = useState(false)
 
   async function handleSave() {
+    if (changePasswordMode && newPassword.trim().length > 0 && newPassword.trim().length < 6) {
+      setError('Senha deve ter no mínimo 6 caracteres')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
       const headers = await authHeaders()
+      const payload: Record<string, unknown> = { id: user.id, role, ativo, nome }
+      if (changePasswordMode && newPassword.trim()) payload.password = newPassword.trim()
       const res = await fetch('/api/admin/users', {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ id: user.id, role, ativo, nome }),
+        body: JSON.stringify(payload),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Erro ao salvar')
@@ -228,7 +237,7 @@ function EditUserModal({
                   onClick={() => setRole(r)}
                   className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors text-left ${
                     role === r
-                      ? `${ROLE_COLORS[r]} border-current`
+                      ? `${ROLE_COLORS[r]} border-current ring-2 ring-offset-1 ring-current`
                       : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                   }`}
                 >
@@ -250,6 +259,53 @@ function EditUserModal({
             >
               <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${ativo ? 'translate-x-6' : 'translate-x-1'}`} />
             </button>
+          </div>
+
+          {/* Redefinir senha */}
+          <div className="border border-gray-200 rounded-lg overflow-hidden">
+            <button
+              type="button"
+              onClick={() => { setChangePasswordMode(v => !v); setNewPassword(''); setShowNewPassword(false) }}
+              className="w-full flex items-center justify-between px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              <span className="font-medium text-xs">Redefinir senha do usuário</span>
+              {changePasswordMode ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+            </button>
+            {changePasswordMode && (
+              <div className="px-3 pb-3 pt-3 border-t border-gray-100 bg-gray-50">
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Nova senha</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      className="w-full pl-3 pr-9 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Mín. 6 caracteres"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { const pwd = generatePassword(); setNewPassword(pwd); setShowNewPassword(true) }}
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors whitespace-nowrap"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    Gerar
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-gray-400">
+                  Deixe em branco para manter a senha atual.
+                </p>
+              </div>
+            )}
           </div>
 
           {error && (
@@ -474,7 +530,7 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
                       onClick={() => setRole(r)}
                       className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors text-left ${
                         role === r
-                          ? `${ROLE_COLORS[r]} border-current`
+                          ? `${ROLE_COLORS[r]} border-current ring-2 ring-offset-1 ring-current`
                           : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
                       }`}
                     >

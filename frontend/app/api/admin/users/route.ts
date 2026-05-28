@@ -70,7 +70,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null)
-  const { id, role, ativo, nome } = body ?? {}
+  const { id, role, ativo, nome, password } = body ?? {}
 
   if (!id) {
     return NextResponse.json({ error: 'id é obrigatório' }, { status: 400 })
@@ -79,6 +79,10 @@ export async function PATCH(req: NextRequest) {
   const validRoles = ['visualizador', 'editor', 'financeiro', 'admin']
   if (role !== undefined && !validRoles.includes(role)) {
     return NextResponse.json({ error: 'role inválido' }, { status: 400 })
+  }
+
+  if (password !== undefined && (typeof password !== 'string' || password.length < 6)) {
+    return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
   }
 
   const update: Record<string, unknown> = {}
@@ -93,6 +97,13 @@ export async function PATCH(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  if (password) {
+    const { error: pwdError } = await supabaseAdmin.auth.admin.updateUserById(id, { password })
+    if (pwdError) {
+      return NextResponse.json({ error: pwdError.message }, { status: 500 })
+    }
   }
 
   return NextResponse.json({ ok: true })
