@@ -165,7 +165,7 @@ export function useCarregamentos() {
           .range(from, from + BATCH - 1)
         if (err) throw err
         if (!data || data.length === 0) break
-        allRows = allRows.concat(data as Array<Record<string, unknown>>)
+        allRows = allRows.concat(data as unknown as Array<Record<string, unknown>>)
         if (data.length < BATCH) break
         from += BATCH
       }
