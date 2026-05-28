@@ -5033,30 +5033,86 @@ def main():
                                         st.error(f"❌ Tabela 'correlacao_endoscopia' não existe ou não está acessível: {e}")
                                         st.stop()
                                 
-                                with st.spinner("🗑️ Removendo dados anteriores..."):
-                                    # Deleta todos os registros sem depender de coluna específica
-                                    try:
-                                        # Tenta deletar tudo usando uma condição sempre verdadeira
-                                        supabase.table("correlacao_endoscopia").delete().neq("ChaveCorrelacao", "").execute()
-                                    except:
-                                        # Fallback: truncate via RPC se disponível
-                                        try:
-                                            supabase.rpc("truncate_correlacao_endoscopia").execute()
-                                        except:
-                                            st.warning("⚠️ Não foi possível limpar dados anteriores. Inserindo novos dados...")
-                                
-                                with st.spinner(f"📤 Carregando {len(df_filtrado)} registros..."):
-                                    # NaN não é JSON válido — substitui por None (→ null no JSON)
-                                    records = df_filtrado.where(df_filtrado.notna(), other=None).to_dict('records')
-                                    
-                                    batch_size = 1000
-                                    for i in range(0, len(records), batch_size):
-                                        batch = records[i:i + batch_size]
-                                        supabase.table("correlacao_endoscopia").insert(batch).execute()
-                                        st.progress((i + len(batch)) / len(records), 
-                                                   f"Carregando lote {i//batch_size + 1}/{(len(records)-1)//batch_size + 1}")
-                                
-                                st.success(f"✅ {len(df_filtrado)} registros carregados com sucesso no Supabase!")
+                                # ── Identifica lotes existentes ANTES de inserir ─────
+                                # Necessário para deletá-los DEPOIS (preserva decisões
+                                # humanas via trigger carry-over durante o INSERT)
+                                with st.spinner("🔍 Verificando lotes existentes..."):
+                                    _lotes_resp = supabase \
+                                        .table("correlacao_endoscopia") \
+                                        .select("lote_processamento") \
+                                        .execute()
+                                    _lotes_anteriores = list({
+                                        r["lote_processamento"]
+                                        for r in (_lotes_resp.data or [])
+                                        if r.get("lote_processamento")
+                                    })
+
+                                # ── Define identificador do novo lote ────────────────
+                                lote_novo = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                                # ── Prepara registros ────────────────────────────────
+                                # Envia apenas lote_processamento + 46 campos de dados.
+                                # O trigger BEFORE INSERT do banco calcula automaticamente:
+                                #   hash_conteudo, is_duplicata, id_original
+                                # E faz carry-over de:
+                                #   decisao_humana, revisado_em, notas_revisor
+                                _COLUNAS_DB = {
+                                    "id", "hash_conteudo", "is_duplicata", "id_original",
+                                    "criado_em", "decisao_humana", "revisado_em", "notas_revisor",
+                                }
+                                _records_raw = df_filtrado \
+                                    .where(df_filtrado.notna(), other=None) \
+                                    .to_dict("records")
+                                records = []
+                                for _r in _records_raw:
+                                    _row = {k: v for k, v in _r.items() if k not in _COLUNAS_DB}
+                                    _row["lote_processamento"] = lote_novo
+                                    records.append(_row)
+
+                                # ── INSERT novo lote ─────────────────────────────────
+                                # upsert com ignore_duplicates=True equivale a
+                                # ON CONFLICT (lote_processamento, hash_conteudo) DO NOTHING,
+                                # silenciando duplicatas intra-batch detectadas pelo trigger.
+                                with st.spinner(f"📤 Inserindo {len(records):,} registros (lote {lote_novo})..."):
+                                    _batch_size = 500
+                                    _n_batches  = -(-len(records) // _batch_size)  # ceil division
+                                    for _i in range(0, len(records), _batch_size):
+                                        _batch = records[_i:_i + _batch_size]
+                                        supabase \
+                                            .table("correlacao_endoscopia") \
+                                            .upsert(
+                                                _batch,
+                                                on_conflict="lote_processamento,hash_conteudo",
+                                                ignore_duplicates=True,
+                                            ) \
+                                            .execute()
+                                        st.progress(
+                                            (_i + len(_batch)) / len(records),
+                                            f"Inserindo lote {_i // _batch_size + 1}/{_n_batches}"
+                                        )
+
+                                # ── DELETE lotes anteriores APÓS o INSERT ────────────
+                                # Ordem crítica: o trigger já fez carry-over das decisões
+                                # humanas durante o INSERT acima.
+                                if _lotes_anteriores:
+                                    with st.spinner(
+                                        f"🗑️ Removendo {len(_lotes_anteriores)} lote(s) anterior(es)..."
+                                    ):
+                                        for _lote_ant in _lotes_anteriores:
+                                            supabase \
+                                                .table("correlacao_endoscopia") \
+                                                .delete() \
+                                                .eq("lote_processamento", _lote_ant) \
+                                                .execute()
+
+                                _msg_lotes = (
+                                    f"\n🗑️ {len(_lotes_anteriores)} lote(s) anterior(es) removido(s)."
+                                    if _lotes_anteriores else ""
+                                )
+                                st.success(
+                                    f"✅ **{len(records):,} registros** carregados com sucesso!\n\n"
+                                    f"🏷️ Lote: `{lote_novo}`{_msg_lotes}"
+                                )
                                 
                         except ImportError:
                             st.error("❌ Biblioteca supabase-py não instalada. Execute: pip install supabase")

@@ -31,7 +31,18 @@ export type MetodoMatch =
 export type DecisaoHumana = 'confirmado' | 'desvinculado' | null
 
 export interface Correlacao {
-  id: string // mapped from ChaveCorrelacao
+  /** UUID surrogate PK gerado pelo banco (gen_random_uuid()) */
+  id: string
+  /** Identificador do lote de carga — ex.: "20260527_181451" */
+  lote_processamento: string
+  /** MD5 dos 11 campos discriminantes para deduplicação */
+  hash_conteudo: string
+  /** true = duplicata identificada pelo trigger (oculta na auditoria) */
+  is_duplicata: boolean
+  /** UUID da primeira ocorrência quando is_duplicata=true */
+  id_original: string | null
+  /** Timestamp de inserção no banco */
+  criado_em: string
   ChaveCorrelacao: string
   QTD_PRODUCAO: number | null
   Data_PRODUCAO: string | null
@@ -78,10 +89,9 @@ export interface Correlacao {
   DescricaoTUSS: string | null
   CodigosTUSS_Ausentes: string | null
   ValorEstimado_TUSS: number | null
-  // Audit columns (to be added via migration)
-  decisao_humana?: DecisaoHumana
-  revisado_em?: string | null
-  notas_revisor?: string | null
+  decisao_humana: DecisaoHumana
+  revisado_em: string | null
+  notas_revisor: string | null
 }
 
 export interface TussMapeamento {

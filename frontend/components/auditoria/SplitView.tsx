@@ -71,7 +71,7 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
     { id: 'valor', label: 'O valor liberado é compatível com o procedimento?', autoCheck: false },
   ]
 
-  const [localDecision, setLocalDecision] = useState<DecisaoHumana>(item.decisao_humana ?? null)
+  const [localDecision, setLocalDecision] = useState<DecisaoHumana>(item.decisao_humana)
 
   const handleDecision = (decision: DecisaoHumana) => {
     setLocalDecision(decision)
@@ -201,6 +201,7 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
 
           <div className="border-t border-gray-200 pt-4">
             <DecisionButtons
+              id={item.id}
               chaveCorrelacao={item.ChaveCorrelacao}
               currentDecision={localDecision}
               onDecision={handleDecision}

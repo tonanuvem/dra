@@ -8,12 +8,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import type { DecisaoHumana } from '@/lib/types'
 
 interface DecisionButtonsProps {
+  /** UUID PK da linha — usado para UPDATE preciso (evita ambiguidade entre lotes) */
+  id: string
   chaveCorrelacao: string
   currentDecision: DecisaoHumana
   onDecision: (decision: DecisaoHumana) => void
 }
 
-export function DecisionButtons({ chaveCorrelacao, currentDecision, onDecision }: DecisionButtonsProps) {
+export function DecisionButtons({ id, chaveCorrelacao: _chaveCorrelacao, currentDecision, onDecision }: DecisionButtonsProps) {
   const [loading, setLoading] = useState(false)
   const { permissions } = useAuth()
 
@@ -49,7 +51,7 @@ export function DecisionButtons({ chaveCorrelacao, currentDecision, onDecision }
       await supabase
         .from(TABLES.correlacao)
         .update(update as object)
-        .eq('ChaveCorrelacao', chaveCorrelacao)
+        .eq('id', id)
 
       onDecision(decision)
     } catch (e) {

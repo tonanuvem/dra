@@ -7,8 +7,7 @@ import type { Correlacao, StatusCorrelacao, StatusTUSS, MetodoMatch } from '@/li
 
 const TABLE = TABLES.correlacao
 
-// Columns that may not exist yet (added via migration)
-const AUDIT_COLUMNS_EXIST = false // set to true after running supabase-migration.sql
+const AUDIT_COLUMNS_EXIST = true
 
 export interface CorrelacoesFilter {
   statusCorrelacao?: StatusCorrelacao[]
@@ -28,6 +27,8 @@ export interface CorrelacoesFilter {
 /** Aplica cláusulas WHERE em uma query Supabase já iniciada (tipada como any) */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyFilters(q: any, filter: CorrelacoesFilter): any {
+  // Sempre exclui duplicatas da auditoria
+  q = q.eq('is_duplicata', false)
   if (filter.statusCorrelacao?.length)  q = q.in('StatusCorrelacao', filter.statusCorrelacao)
   if (filter.statusTUSS?.length)        q = q.in('StatusTUSS', filter.statusTUSS)
   if (filter.metodoMatch?.length)       q = q.in('MetodoMatch', filter.metodoMatch)
@@ -131,6 +132,7 @@ export function useDashboardStats() {
           const { data: batch, error } = await supabase
             .from(TABLE)
             .select('StatusCorrelacao, ValorEstimado_TUSS, ValorLiberado_REPASSE, MetodoMatch, StatusTUSS, CodigosTUSS_Esperados')
+            .eq('is_duplicata', false)
             .range(from, from + batchSize - 1)
 
           if (error || !batch || batch.length === 0) break
