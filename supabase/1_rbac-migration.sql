@@ -61,6 +61,11 @@ COMMENT ON COLUMN public.profiles.cpf         IS 'CPF do usuário — 11 dígito
 --    SECURITY DEFINER: lê profiles sem acionar RLS (evita
 --    recursão infinita ao avaliar a própria policy de admin).
 -- ─────────────────────────────────────────────────────────────
+-- 2b. FUNÇÃO: get_email_by_cpf(cpf)
+--    Permite resolver CPF → e-mail na tela de login, antes de
+--    o usuário estar autenticado. SECURITY DEFINER bypassa RLS.
+--    Exposta ao role 'anon' (usuário não autenticado do Supabase).
+-- ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS TEXT
@@ -74,6 +79,22 @@ $$;
 
 COMMENT ON FUNCTION public.get_my_role IS
   'Retorna o role do usuário logado. SECURITY DEFINER evita recursão nas políticas RLS.';
+
+CREATE OR REPLACE FUNCTION public.get_email_by_cpf(p_cpf TEXT)
+RETURNS TEXT
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT email FROM public.profiles WHERE cpf = p_cpf LIMIT 1;
+$$;
+
+-- Permite que usuários não autenticados (anon) chamem via supabase.rpc()
+GRANT EXECUTE ON FUNCTION public.get_email_by_cpf(TEXT) TO anon;
+
+COMMENT ON FUNCTION public.get_email_by_cpf IS
+  'Resolve CPF → e-mail para login. SECURITY DEFINER bypassa RLS. Exposta ao role anon.';
 
 
 -- ─────────────────────────────────────────────────────────────

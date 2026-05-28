@@ -50,9 +50,10 @@ DROP TABLE IF EXISTS public.profiles               CASCADE;
 -- 4. FUNÇÕES
 -- ─────────────────────────────────────────────────────────────
 
-DROP FUNCTION IF EXISTS public.handle_new_user()  CASCADE;
-DROP FUNCTION IF EXISTS public.get_my_role()      CASCADE;
-DROP FUNCTION IF EXISTS public.touch_updated_at() CASCADE;
+DROP FUNCTION IF EXISTS public.handle_new_user()       CASCADE;
+DROP FUNCTION IF EXISTS public.get_my_role()           CASCADE;
+DROP FUNCTION IF EXISTS public.get_email_by_cpf(TEXT)  CASCADE;
+DROP FUNCTION IF EXISTS public.touch_updated_at()      CASCADE;
 
 
 -- ─────────────────────────────────────────────────────────────

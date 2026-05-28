@@ -49,22 +49,20 @@ function LoginForm() {
     try {
       let loginEmail = credential.trim().toLowerCase()
 
-      // ── Se for CPF: resolve o e-mail a partir da tabela profiles ──
+      // ── Se for CPF: resolve o e-mail via função SECURITY DEFINER ──
+      // (a query direta em profiles falha para usuários não autenticados por RLS)
       if (isCpf(loginEmail)) {
         const cpfNumeros = soDigitos(loginEmail)
-        const { data: profileByCpf, error: cpfErr } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('cpf', cpfNumeros)
-          .maybeSingle()
+        const { data: emailResolvido, error: cpfErr } = await supabase
+          .rpc('get_email_by_cpf', { p_cpf: cpfNumeros })
 
-        if (cpfErr || !profileByCpf?.email) {
+        if (cpfErr || !emailResolvido) {
           setErro('CPF não encontrado. Verifique o número ou use seu e-mail.')
           setLoading(false)
           return
         }
 
-        loginEmail = profileByCpf.email
+        loginEmail = emailResolvido as string
       }
 
       // ── Autenticação com e-mail resolvido ─────────────────────
