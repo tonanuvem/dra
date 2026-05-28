@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS public.lotes_carga (
   -- Referencia correlacao_endoscopia.lote_processamento
 
   status               TEXT        NOT NULL DEFAULT 'ativo'
-                                   CHECK (status IN ('ativo', 'invalidado')),
+                                   CHECK (status IN ('ativo', 'invalidado', 'iniciado', 'erro')),
 
   -- Contagens calculadas pelo app.py após o INSERT
   total_inserido       INT,
@@ -106,7 +106,16 @@ COMMENT ON TABLE public.lotes_carga IS
   'Registro central de cada carga. Uma linha por lote_processamento. '
   'app.py cria a linha antes do INSERT; frontend atualiza na invalidação.';
 COMMENT ON COLUMN public.lotes_carga.status IS
-  'ativo = carga vigente. invalidado = descartada manualmente pelo admin.';
+  'iniciado = INSERT em andamento. ativo = carga concluída com sucesso. '
+  'erro = falha durante o INSERT. invalidado = descartada pelo admin.';
+
+-- Corrige o CHECK em bancos que já tinham a tabela com os valores antigos.
+-- Idempotente: DROP IF EXISTS não falha se o constraint não existir.
+ALTER TABLE public.lotes_carga
+  DROP CONSTRAINT IF EXISTS lotes_carga_status_check;
+ALTER TABLE public.lotes_carga
+  ADD CONSTRAINT lotes_carga_status_check
+  CHECK (status IN ('ativo', 'invalidado', 'iniciado', 'erro'));
 
 
 -- ─────────────────────────────────────────────────────────────

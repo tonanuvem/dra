@@ -4684,23 +4684,13 @@ def main():
                     # ── Filtra PRODUCAO removendo linhas com erro (se checkbox ativo) ──
                     _csv_producao_corr = csv_producao
                     if not usa_llm_corr and _excluir_erros and _n_erros_t4 > 0:
-                        try:
-                            _df_prod_filtrado = df_prod_prev[
-                                ~st.session_state[_err_key_t4][1].index.isin(
-                                    df_prod_prev.index
-                                )
-                            ]
-                            # Recria o índice da máscara de erros para filtrar corretamente
-                            _, _df_erros_t4 = st.session_state[_err_key_t4]
-                            _df_prod_limpo = df_prod_prev.drop(index=_df_erros_t4.index, errors="ignore")
-                            _csv_producao_corr = _df_prod_limpo.to_csv(index=False)
-                            st.info(
-                                f"🧹 {_n_erros_t4} linha(s) com erro excluída(s) da PRODUCAO antes da correlação. "
-                                f"Correlacionando com {len(_df_prod_limpo)} linha(s)."
-                            )
-                        except Exception as _ef:
-                            logger.warning(f"Falha ao filtrar erros de PRODUCAO: {_ef}")
-                            _csv_producao_corr = csv_producao
+                        _, _df_erros_t4 = st.session_state[_err_key_t4]
+                        _df_prod_limpo = df_prod_prev.drop(index=_df_erros_t4.index, errors="ignore")
+                        _csv_producao_corr = _df_prod_limpo.to_csv(index=False)
+                        st.info(
+                            f"🧹 {_n_erros_t4} linha(s) com erro excluída(s) da PRODUCAO antes da correlação. "
+                            f"Correlacionando com {len(_df_prod_limpo)} linha(s)."
+                        )
 
                     # ── MODO LOCAL: correlacionar_csv_arquivos (com thread para não travar UI) ──
                     if not usa_llm_corr:
