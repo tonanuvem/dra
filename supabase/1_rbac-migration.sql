@@ -262,71 +262,78 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 DO $$
 DECLARE
-  v_uid   UUID;
-  v_email TEXT := 'contato@dracharliana.com';
-  v_senha TEXT := 'Admin123';
-  v_nome  TEXT := 'Administrador';
+  v_uid        UUID;
+  v_email      TEXT    := 'contato@dracharliana.com';
+  v_senha      TEXT    := '123456';
+  v_nome       TEXT    := 'Administrador';
+  v_cpf        TEXT    := '12345678900';
+  v_tem_perfil BOOLEAN := false;
 BEGIN
-  -- Verifica se o usuário já existe
+  -- Verifica se o usuário já existe em auth.users
   SELECT id INTO v_uid
   FROM auth.users
   WHERE email = v_email
   LIMIT 1;
 
   IF v_uid IS NOT NULL THEN
-    RAISE NOTICE 'Usuário % já existe (id: %). Pulando criação.', v_email, v_uid;
+    -- Usuário já existe em auth.users — verifica se o profile foi criado
+    -- (pode ter sido apagado se as tabelas públicas foram recriadas)
+    SELECT EXISTS (
+      SELECT 1 FROM public.profiles WHERE id = v_uid
+    ) INTO v_tem_perfil;
+
+    IF v_tem_perfil THEN
+      -- Profile existe: garante que role e cpf estão corretos
+      UPDATE public.profiles
+      SET role = 'admin', nome = v_nome, cpf = v_cpf, ativo = true, atualizado_em = NOW()
+      WHERE id = v_uid;
+
+      RAISE NOTICE 'Usuário % já existe (id: %). Profile verificado/atualizado.', v_email, v_uid;
+    ELSE
+      -- Profile não existe (tabela foi recriada): insere diretamente
+      INSERT INTO public.profiles (id, email, nome, cpf, role, ativo)
+      VALUES (v_uid, v_email, v_nome, v_cpf, 'admin', true);
+
+      RAISE NOTICE '=== Profile admin recriado ===';
+      RAISE NOTICE 'E-mail : %', v_email;
+      RAISE NOTICE 'CPF    : %', v_cpf;
+      RAISE NOTICE 'UUID   : %', v_uid;
+      RAISE NOTICE '(Senha não alterada — use a senha anterior ou redefina no Supabase)';
+      RAISE NOTICE '==============================';
+    END IF;
+
   ELSE
+    -- Usuário não existe: cria do zero
     v_uid := gen_random_uuid();
 
-    -- Insere em auth.users com senha criptografada via bcrypt
     INSERT INTO auth.users (
-      instance_id,
-      id,
-      aud,
-      role,
-      email,
-      encrypted_password,
-      email_confirmed_at,
-      raw_app_meta_data,
-      raw_user_meta_data,
-      is_super_admin,
-      created_at,
-      updated_at,
-      confirmation_token,
-      email_change,
-      email_change_token_new,
-      recovery_token
+      instance_id, id, aud, role, email,
+      encrypted_password, email_confirmed_at,
+      raw_app_meta_data, raw_user_meta_data,
+      is_super_admin, created_at, updated_at,
+      confirmation_token, email_change, email_change_token_new, recovery_token
     ) VALUES (
       '00000000-0000-0000-0000-000000000000',
-      v_uid,
-      'authenticated',
-      'authenticated',
-      v_email,
-      crypt(v_senha, gen_salt('bf')),   -- bcrypt — mesmo algoritmo que Supabase usa
-      NOW(),                             -- já confirmado, sem e-mail de verificação
+      v_uid, 'authenticated', 'authenticated', v_email,
+      crypt(v_senha, gen_salt('bf')),
+      NOW(),
       '{"provider":"email","providers":["email"]}'::jsonb,
-      jsonb_build_object('nome', v_nome),
-      false,
-      NOW(),
-      NOW(),
-      '', '', '', ''
+      jsonb_build_object('nome', v_nome, 'cpf', v_cpf),
+      false, NOW(), NOW(), '', '', '', ''
     );
 
-    -- O trigger on_auth_user_created já criou o profile com role=visualizador.
-    -- Promovemos para admin agora.
+    -- O trigger on_auth_user_created já inseriu o profile com role=visualizador.
+    -- Promovemos para admin e definimos o CPF agora.
     UPDATE public.profiles
-    SET
-      role          = 'admin',
-      nome          = v_nome,
-      atualizado_em = NOW()
+    SET role = 'admin', nome = v_nome, cpf = v_cpf, atualizado_em = NOW()
     WHERE id = v_uid;
 
     RAISE NOTICE '=== Admin criado com sucesso ===';
     RAISE NOTICE 'E-mail : %', v_email;
+    RAISE NOTICE 'CPF    : %', v_cpf;
     RAISE NOTICE 'Senha  : %', v_senha;
     RAISE NOTICE 'Role   : admin';
     RAISE NOTICE 'UUID   : %', v_uid;
-    RAISE NOTICE '⚠  Troque a senha no primeiro acesso!';
     RAISE NOTICE '================================';
   END IF;
 END;
@@ -339,7 +346,8 @@ $$;
 --
 --  Admin inicial criado automaticamente (seção 8):
 --    E-mail : contato@dracharliana.com
---    Senha  : Admin123   ← TROQUE NO PRIMEIRO ACESSO
+--    CPF    : 12345678900
+--    Senha  : 123456
 --
 --  Para redefinir a senha manualmente (se necessário):
 --    UPDATE auth.users
