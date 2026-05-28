@@ -28,6 +28,136 @@ from pypdf import PdfReader
 # CrewAI
 from crewai import Agent, Task, Crew, Process, LLM
 
+# Supabase (auth + dados)
+from supabase import create_client as _supa_create_client
+
+# =============================================================================
+# RBAC — autenticação e controle de acesso
+# =============================================================================
+
+# Perfis permitidos no backend (visualizador usa apenas o frontend Next.js)
+_BACKEND_ROLES   = {"editor", "financeiro", "admin"}
+_FINANCIAL_ROLES = {"financeiro", "admin"}
+
+# Colunas de valor financeiro que editores não visualizam
+_FINANCIAL_COLS = [
+    "ValorEstimado_TUSS",
+    "ValorLiberado_REPASSE",
+    "ValorBase_REPASSE",
+]
+
+_ROLE_LABELS = {"editor": "Editor", "financeiro": "Financeiro", "admin": "Admin"}
+_ROLE_COLORS = {"editor": "#b45309", "financeiro": "#1d4ed8", "admin": "#b91c1c"}
+
+
+def _supa_auth():
+    """Cliente Supabase com chave anon — usado só para autenticação."""
+    return _supa_create_client(
+        os.getenv("SUPABASE_URL", ""),
+        os.getenv("SUPABASE_KEY", ""),
+    )
+
+
+def _supa_service():
+    """Cliente Supabase com service_role — leitura de profiles sem RLS."""
+    return _supa_create_client(
+        os.getenv("SUPABASE_URL", ""),
+        os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY", ""),
+    )
+
+
+def can_view_financial() -> bool:
+    """True se o usuário logado pode ver informações financeiras."""
+    return st.session_state.get("auth_role") in _FINANCIAL_ROLES
+
+
+def is_admin() -> bool:
+    return st.session_state.get("auth_role") == "admin"
+
+
+def _strip_financial(df: pd.DataFrame) -> pd.DataFrame:
+    """Remove colunas financeiras do DataFrame quando o usuário não tem permissão."""
+    if can_view_financial():
+        return df
+    return df.drop(columns=[c for c in _FINANCIAL_COLS if c in df.columns])
+
+
+def _logout():
+    for k in ["auth_user", "auth_role", "auth_nome", "auth_email"]:
+        st.session_state.pop(k, None)
+    st.rerun()
+
+
+def _show_login():
+    """Tela de login — renderizada no lugar do app quando não autenticado."""
+    st.markdown(
+        "<div style='max-width:420px;margin:80px auto 0;'>"
+        "<h2 style='text-align:center;'>🔬 Endoscopia</h2>"
+        "<p style='text-align:center;color:#6b7280;margin-bottom:24px;'>"
+        "Auditoria de Faturamento — painel de análise</p>",
+        unsafe_allow_html=True,
+    )
+
+    with st.form("login_form", clear_on_submit=False):
+        email    = st.text_input("E-mail", placeholder="email@exemplo.com")
+        password = st.text_input("Senha", type="password")
+        submitted = st.form_submit_button("Entrar", use_container_width=True, type="primary")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if not submitted:
+        return
+
+    if not email or not password:
+        st.error("Preencha e-mail e senha.")
+        return
+
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    if not supabase_url:
+        st.error("SUPABASE_URL não configurado. Verifique o arquivo .env")
+        return
+
+    try:
+        resp = _supa_auth().auth.sign_in_with_password(
+            {"email": email.strip(), "password": password}
+        )
+        user = resp.user
+
+        # Busca role e status no profiles (usa service_role para bypassar RLS)
+        profile_resp = (
+            _supa_service()
+            .table("profiles")
+            .select("role, nome, ativo")
+            .eq("id", str(user.id))
+            .single()
+            .execute()
+        )
+        profile = profile_resp.data or {}
+        role  = profile.get("role", "visualizador")
+        ativo = profile.get("ativo", True)
+
+        if not ativo:
+            st.error("⛔ Conta inativa. Contate o administrador.")
+            return
+
+        if role not in _BACKEND_ROLES:
+            st.error("⛔ Perfil 'Visualizador' não tem acesso a esta interface.")
+            return
+
+        st.session_state["auth_user"]  = str(user.id)
+        st.session_state["auth_email"] = user.email or email
+        st.session_state["auth_nome"]  = profile.get("nome") or user.email or email
+        st.session_state["auth_role"]  = role
+        st.rerun()
+
+    except Exception as exc:
+        msg = str(exc)
+        if "Invalid login credentials" in msg or "invalid_credentials" in msg:
+            st.error("E-mail ou senha incorretos.")
+        else:
+            st.error(f"Erro ao autenticar: {msg}")
+
+
 # =============================================================================
 # CONFIGURAÇÃO DE VARIÁVEIS DE AMBIENTE E LOG
 # =============================================================================
@@ -3576,6 +3706,11 @@ def main():
         layout="wide",
     )
 
+    # ── Auth guard ────────────────────────────────────────────────────────────
+    if "auth_user" not in st.session_state:
+        _show_login()
+        st.stop()
+
     # Inicializa os defaults dos agentes no session_state (executado uma vez por sessão)
     _init_agent_session_state()
 
@@ -3594,6 +3729,31 @@ def main():
 
     # ── Sidebar ──────────────────────────────────────────────────────────────
     with st.sidebar:
+        # ── Usuário logado + logout ───────────────────────────────────────
+        _nome  = st.session_state.get("auth_nome", "")
+        _email = st.session_state.get("auth_email", "")
+        _role  = st.session_state.get("auth_role", "")
+        _rlabel = _ROLE_LABELS.get(_role, _role)
+        _rcolor = _ROLE_COLORS.get(_role, "#374151")
+        st.markdown(
+            f"<div style='display:flex;align-items:center;gap:8px;padding:6px 0;'>"
+            f"<div style='width:32px;height:32px;border-radius:50%;background:#2563eb;"
+            f"display:flex;align-items:center;justify-content:center;"
+            f"color:white;font-weight:700;font-size:13px;flex-shrink:0;'>"
+            f"{(_nome or _email or '?')[0].upper()}</div>"
+            f"<div style='min-width:0;'>"
+            f"<div style='font-size:12px;font-weight:600;color:#111827;white-space:nowrap;"
+            f"overflow:hidden;text-overflow:ellipsis;'>{_nome or _email}</div>"
+            f"<span style='font-size:10px;font-weight:600;padding:1px 6px;border-radius:4px;"
+            f"background:{_rcolor}22;color:{_rcolor};border:1px solid {_rcolor}44;'>"
+            f"{_rlabel}</span>"
+            f"</div></div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("↩️ Sair", use_container_width=True):
+            _logout()
+        st.divider()
+
         st.info("💡 Sistema exclusivo para controle de procedimentos endoscópicos e faturamento junto a convênios.")
         st.divider()
         st.header("⚙️ Configurações")
@@ -4554,10 +4714,10 @@ def main():
                             help="Abra a aba 📋 Gerar Cobrança para exportar o formulário de revisão",
                         )
 
-                        # ── Estimativa de impacto financeiro ──────────────────
+                        # ── Estimativa de impacto financeiro (financeiro/admin) ──
                         _val_col = df_final.get("ValorEstimado_TUSS", pd.Series(dtype=str))
                         _val_num = pd.to_numeric(_val_col, errors="coerce").dropna()
-                        if not _val_num.empty:
+                        if not _val_num.empty and can_view_financial():
                             st.markdown("---")
                             st.markdown("#### 💰 Estimativa de Impacto Financeiro")
                             _total_est = _val_num.sum()
@@ -4764,6 +4924,9 @@ def main():
                         else:
                             df_display = df_filtrado
 
+                        # ── Ocultar colunas financeiras para editor ───────────
+                        df_display = _strip_financial(df_display)
+
                         # ── Reordenar colunas: pinadas primeiro ───────────────
                         _colunas_pinadas = ["StatusCorrelacao", "CodigoTUSS_REPASSE", "StatusTUSS", "CodigosTUSS_Esperados"]
                         _colunas_existentes = [c for c in _colunas_pinadas if c in df_display.columns]
@@ -4819,7 +4982,7 @@ def main():
                     if _csv_dl_key not in st.session_state:
                         for _ck in [k for k in st.session_state if k.startswith("corr_csv_dl_")]:
                             del st.session_state[_ck]
-                        st.session_state[_csv_dl_key] = df_filtrado.to_csv(
+                        st.session_state[_csv_dl_key] = _strip_financial(df_filtrado).to_csv(
                             index=False, sep=",", encoding="utf-8-sig"
                         )
                     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -4845,7 +5008,9 @@ def main():
                     
                     # ── Botão de Recarregar no Supabase ──────────────────────
                     st.divider()
-                    if st.button("🔄 Recarregar Dados no Supabase", type="secondary", help="Descarta dados anteriores e recarrega toda a tabela correlacao_endoscopia"):
+                    if not is_admin():
+                        st.caption("🔒 Recarregar dados no Supabase — apenas Admin")
+                    if is_admin() and st.button("🔄 Recarregar Dados no Supabase", type="secondary", help="Descarta dados anteriores e recarrega toda a tabela correlacao_endoscopia"):
                         try:
                             from supabase import create_client
 
@@ -4929,9 +5094,17 @@ def main():
                     st.subheader("📋 Resumo — Divergências por Convênio")
                     st.markdown(resumo_str)
 
-    # ── TAB 5: GERAR COBRANÇA ─────────────────────────────────────────────────
+    # ── TAB 5: GERAR COBRANÇA (financeiro / admin) ───────────────────────────
     with tab_cobranca:
         st.header("📋 Gerar Formulário de Cobrança")
+
+        if not can_view_financial():
+            st.warning(
+                "🔒 **Acesso restrito** — esta aba está disponível apenas para os perfis "
+                "**Financeiro** e **Admin**."
+            )
+            st.stop()
+
         st.markdown(
             "Gera o **Formulário para Solicitação de Revisão de Procedimentos Não Repassados** "
             "preenchido automaticamente com os casos identificados na correlação."
