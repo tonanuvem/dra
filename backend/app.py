@@ -5182,12 +5182,12 @@ def main():
                                     v = v.strip()
                                     if not v:
                                         return None
-                                    for fmt in ("%d/%m/%Y", "%d-%m-%Y"):
+                                    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
                                         try:
                                             return datetime.strptime(v, fmt).strftime("%Y-%m-%d")
                                         except ValueError:
                                             pass
-                                    return v  # já está em outro formato, deixa passar
+                                    return None  # valor não reconhecido como data → NULL
 
                                 def _fmt_pct(v):
                                     """Remove ' %' de valores como '100 %' → 100.0 (float) para colunas numeric."""
