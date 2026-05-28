@@ -5189,12 +5189,30 @@ def main():
                                             pass
                                     return v  # já está em outro formato, deixa passar
 
+                                def _fmt_pct(v):
+                                    """Remove ' %' de valores como '100 %' → 100.0 (float) para colunas numeric."""
+                                    if not v or not isinstance(v, str):
+                                        return v
+                                    v = v.strip()
+                                    if not v:
+                                        return None
+                                    cleaned = v.replace('%', '').strip()
+                                    try:
+                                        return float(cleaned)
+                                    except ValueError:
+                                        return None
+
+                                _PCT_COLS = {"Porcentagem_REPASSE"}
+
                                 records = []
                                 for _r in _records_raw:
                                     _row = {k: v for k, v in _r.items() if k not in _COLUNAS_DB}
                                     for _dc in _DATE_COLS:
                                         if _dc in _row:
                                             _row[_dc] = _fmt_date_iso(_row[_dc])
+                                    for _pc in _PCT_COLS:
+                                        if _pc in _row:
+                                            _row[_pc] = _fmt_pct(_row[_pc])
                                     _row["lote_processamento"] = lote_novo
                                     records.append(_row)
 

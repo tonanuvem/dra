@@ -27,7 +27,7 @@ export default function DashboardPage() {
 
       {/* ── KPI Cards ──────────────────────────────────── */}
       {/* Mobile: 2 colunas · Tablet (sm): 3 · Desktop (xl): 6 sem financeiro / xl:5 sem ele */}
-      <div className={`grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 ${canFinancial ? 'xl:grid-cols-6' : 'xl:grid-cols-5'}`}>
+      <div className={`grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-3 ${canFinancial ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
         <KpiCard
           title="Total de Registros"
           value={loading ? '—' : stats.total.toLocaleString('pt-BR')}
