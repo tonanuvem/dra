@@ -94,12 +94,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listener para login / logout / expiração de token
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, session) => {
         if (!mounted) return
-        // Mantém loading=true durante toda a transição de estado para evitar
-        // que o AuthGuard interprete o intervalo user≠null / profile=null
-        // (entre setUser e o retorno do loadProfile) como "sessão inválida"
-        // e dispare um signOut() prematuro.
+
+        // TOKEN_REFRESHED e USER_UPDATED são eventos silenciosos: o JWT foi
+        // renovado automaticamente pelo Supabase (ex: ao voltar para a aba).
+        // O usuário e o profile não mudam — apenas atualizamos o objeto user
+        // sem exibir spinner, evitando o flash de carregamento ao retornar à aba.
+        if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+          setUser(session?.user ?? null)
+          return
+        }
+
+        // Para SIGNED_IN e SIGNED_OUT: mantém loading=true durante toda a
+        // transição para evitar que o AuthGuard veja user≠null / profile=null
+        // simultaneamente e dispare um signOut() prematuro.
         setLoading(true)
         const u = session?.user ?? null
         setUser(u)
