@@ -30,38 +30,46 @@ function AuditoriaContent() {
 
   // Build filter for hook
   const filterConfig = useMemo(() => {
-    const statusMap: Record<FiltroType, { statusCorrelacao?: StatusCorrelacao[]; metodoMatch?: MetodoMatch[] }> = {
+    const statusMap: Record<FiltroType, { statusCorrelacao?: StatusCorrelacao[]; metodoMatch?: MetodoMatch[]; loadAll?: boolean }> = {
       todos: {},
-      divergente: { statusCorrelacao: [
-        'CORRELACIONADO_PROCEDIMENTO_DIVERGENTE',
-        'CORRELACIONADO_FALLBACK_1_PROCEDIMENTO_DIVERGENTE',
-        'CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE',
-        'CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE',
+      divergente: { metodoMatch: [
+        '1_NOME_COMPLETO_DATA_PROCEDIMENTO_PROCEDIMENTO_DIVERGENTE',
+        '2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO_PROCEDIMENTO_DIVERGENTE',
+        '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA_PROCEDIMENTO_DIVERGENTE',
+        '4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL_PROCEDIMENTO_DIVERGENTE',
       ]},
       fallback: { metodoMatch: [
         '2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO',
         '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA',
         '4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL',
       ]},
-      glosa_total: { statusCorrelacao: ['CORRELACIONADO_COM_GLOSA_TOTAL'] },
-      glosa_parcial: { statusCorrelacao: ['CORRELACIONADO_COM_GLOSA_PARCIAL'] },
+      // glosa: filtra CORRELACIONADO server-side, refina por valor client-side
+      glosa_total:  { statusCorrelacao: ['CORRELACIONADO'], loadAll: true },
+      glosa_parcial: { statusCorrelacao: ['CORRELACIONADO'], loadAll: true },
       nao_revisado: {},
     }
     return {
       ...statusMap[filtro],
       pendentesRevisao: filtro === 'nao_revisado',
       search: search || undefined,
-      limit: 500,
+      // glosa usa loadAll:true (definido no statusMap), então não precisa de limit
+      limit: (filtro === 'glosa_total' || filtro === 'glosa_parcial') ? undefined : 500,
     }
   }, [filtro, search])
 
   const { data, total, loading } = useCorrelacoes(filterConfig)
 
-  // For 'nao_revisado' filter, additionally filter client-side for needsHumanReview
+  // Client-side filtering for tabs that can't be filtered server-side
   const filteredData = useMemo(() => {
-    if (filtro === 'nao_revisado') {
-      return data.filter(r => needsHumanReview(r))
-    }
+    if (filtro === 'nao_revisado') return data.filter(r => needsHumanReview(r))
+    if (filtro === 'glosa_total') return data.filter(r =>
+      Number(r.ValorLiberado_REPASSE ?? 0) === 0 && Number(r.ValorEstimado_TUSS ?? 0) > 0
+    )
+    if (filtro === 'glosa_parcial') return data.filter(r => {
+      const rep = Number(r.ValorLiberado_REPASSE ?? 0)
+      const est = Number(r.ValorEstimado_TUSS ?? 0)
+      return est > 0 && rep > 0 && rep < est * 0.95
+    })
     return data
   }, [data, filtro])
 

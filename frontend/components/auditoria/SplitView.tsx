@@ -56,7 +56,7 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
   const item = items[currentIndex]
   if (!item) return null
 
-  const isDivergente = item.StatusCorrelacao?.includes('DIVERGENTE')
+  const isDivergente = (item.MetodoMatch as string)?.includes('PROCEDIMENTO_DIVERGENTE')
   const isFuzzy = item.MetodoMatch === '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA'
   const isNrAtendimento = item.MetodoMatch === '2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO'
 

@@ -5,16 +5,10 @@ import { getStatusCorrelacaoLabel } from '@/lib/utils'
 
 // Cores semânticas por status
 const STATUS_COLORS: Record<string, string> = {
-  CORRELACIONADO:                              '#22c55e',
-  NAO_FATURADO_NO_REPASSE:                     '#ef4444',
-  REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO:        '#8b5cf6',
-  CORRELACIONADO_COM_GLOSA_PARCIAL:            '#f97316',
-  CORRELACIONADO_VIA_NR_ATENDIMENTO:           '#06b6d4',
-  CORRELACIONADO_PROCEDIMENTO_ADICIONAL:       '#14b8a6',
-  CORRELACIONADO_FALLBACK_2:                   '#eab308',
-  CORRELACIONADO_FALLBACK_1:                   '#a78bfa',
-  CORRELACIONADO_PROCEDIMENTO_DIVERGENTE:      '#f43f5e',
-  REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO:       '#64748b',
+  CORRELACIONADO:                        '#22c55e',
+  NAO_FATURADO_NO_REPASSE:               '#ef4444',
+  REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO:  '#8b5cf6',
+  REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO: '#64748b',
 }
 const FALLBACK_PALETTE = ['#94a3b8', '#cbd5e1', '#bae6fd', '#fde68a', '#bbf7d0']
 

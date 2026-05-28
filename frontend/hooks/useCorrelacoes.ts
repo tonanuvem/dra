@@ -210,9 +210,20 @@ export function useDashboardStats() {
           correlacionados: byStatus['CORRELACIONADO']?.count ?? 0,
           naoFaturados: byStatus['NAO_FATURADO_NO_REPASSE']?.count ?? 0,
           repasseNaoIdentificado: byStatus['REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO']?.count ?? 0,
-          glosaTotal: byStatus['CORRELACIONADO_COM_GLOSA_TOTAL']?.count ?? 0,
-          glosaParci: byStatus['CORRELACIONADO_COM_GLOSA_PARCIAL']?.count ?? 0,
-          procedimentoDivergente: byStatus['CORRELACIONADO_PROCEDIMENTO_DIVERGENTE']?.count ?? 0,
+          glosaTotal: allRows.filter(r =>
+            r.StatusCorrelacao === 'CORRELACIONADO' &&
+            Number(r.ValorLiberado_REPASSE ?? 0) === 0 &&
+            Number(r.ValorEstimado_TUSS ?? 0) > 0
+          ).length,
+          glosaParci: allRows.filter(r => {
+            if (r.StatusCorrelacao !== 'CORRELACIONADO') return false
+            const rep = Number(r.ValorLiberado_REPASSE ?? 0)
+            const est = Number(r.ValorEstimado_TUSS ?? 0)
+            return est > 0 && rep > 0 && rep < est * 0.95
+          }).length,
+          procedimentoDivergente: allRows.filter(r =>
+            (r.MetodoMatch as string)?.includes('PROCEDIMENTO_DIVERGENTE')
+          ).length,
           pendentesRevisao,
           valorRecuperar,
           statusDistribution: dist,
@@ -233,13 +244,11 @@ function needsReview(row: { StatusCorrelacao?: string; MetodoMatch?: string; Sta
   const s = row.StatusCorrelacao ?? ''
   const m = row.MetodoMatch ?? ''
   return (
-    s.includes('DIVERGENTE') ||
-    s === 'CORRELACIONADO_FALLBACK_1' ||
-    s === 'CORRELACIONADO_FALLBACK_2' ||
+    m.includes('PROCEDIMENTO_DIVERGENTE') ||
     s === 'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO' ||
-    m === '2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO' ||
-    m === '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA' ||
-    m === '4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL' ||
+    m.startsWith('2_FALLBACK_NR-ATENDIMENTO') ||
+    m.startsWith('3_FALLBACK_NOME_PARCIAL') ||
+    m.startsWith('4_FALLBACK_NOME_COMPLETO') ||
     row.StatusTUSS === 'TUSS_COMBINACAO_SEM_MAPEAMENTO'
   )
 }

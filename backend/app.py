@@ -251,8 +251,8 @@ Receber os CSVs padronizados gerados pelo Analista — um do tipo PRODUCAO e out
 - A saída do CSV_CORRELACAO deve conter todas as linhas do CSV de PRODUÇÃO como a base da sua resposta, onde devem ser incluídas as novas colunas com o relacionamento do CSV de REPASSE, sendo que para cada linha da PRODUCAO, deve tentar encontrar correspondência no REPASSE usando a chave composta com 3 campos (data + paciente + procedimento). Devem ser incluídas em cada linha somente as colunas do CSV de REPASSE que ainda não exista no CSV de PRODUÇÃO, e também deve ser incluída uma nova coluna de StatusCorrelacao, considerando a seguinte regra:
    a. Se ValorLiberado coincidir (ou REPASSE não tiver valor): StatusCorrelacao = "CORRELACIONADO"
    b. Se ValorLiberado for menor no REPASSE: StatusCorrelacao = "CORRELACIONADO_COM_DIVERGENCIA_VALOR"
-   c. Se ValorLiberado = 0 no REPASSE: StatusCorrelacao = "CORRELACIONADO_COM_GLOSA_TOTAL"
-   d. Se ValorLiberado > 0 mas menor que esperado: StatusCorrelacao = "CORRELACIONADO_COM_GLOSA_PARCIAL"
+   c. Se ValorLiberado = 0 no REPASSE: StatusCorrelacao = "CORRELACIONADO" (glosa total — ver ValorLiberado_REPASSE)
+   d. Se ValorLiberado > 0 mas menor que esperado: StatusCorrelacao = "CORRELACIONADO" (glosa parcial — ver ValorLiberado_REPASSE)
    e. Se NÃO encontrar correspondência no REPASSE: StatusCorrelacao = "NAO_FATURADO_NO_REPASSE"
 
 - Para linhas do REPASSE sem correspondência na PRODUCAO, inserir no final do arquivo CSV_CORRELACAO as linhas como valores zerados do PRODUCAO e os valores existentes da PRODUÇÃO, e com nova coluna StatusCorrelacao = "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO"
@@ -1673,7 +1673,7 @@ def _determinar_status_correlacao(valor_liberado: float, tem_match: bool) -> str
         return "NAO_FATURADO_NO_REPASSE"
     
     if valor_liberado == 0:
-        return "CORRELACIONADO_COM_GLOSA_TOTAL"
+        return "CORRELACIONADO"
     elif valor_liberado > 0:
         return "CORRELACIONADO"
     else:
@@ -2828,7 +2828,7 @@ def verificar_tuss_adicionais(
     - PA incorporado no principal: TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL
     - PA com código único: TUSS_PROC_ADICIONAL_RECONHECIDO / TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES
     - PA com múltiplos códigos: TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS / TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE
-    - Companion rows (CORRELACIONADO_PROCEDIMENTO_ADICIONAL sem proc_princ): TUSS_PROC_ADICIONAL_RECONHECIDO
+    - Companion rows (MetodoMatch=5_FALLBACK_COMPANION sem proc_princ): TUSS_PROC_ADICIONAL_RECONHECIDO
     """
     from datetime import timedelta
 
@@ -2873,10 +2873,10 @@ def verificar_tuss_adicionais(
         proc_princ = str(linha.get("Procedimento_PRODUCAO", "")).strip()
         sem_princ  = not proc_princ or proc_princ == "nan"
 
-        # Causa 2: companion row — CORRELACIONADO_PROCEDIMENTO_ADICIONAL sem proc_princ nem PA
+        # Causa 2: companion row — correlacionado via FALLBACK_COMPANION sem proc_princ nem PA
         # O código já está presente no repasse; apenas registrar como reconhecido.
         if sem_pa and sem_princ:
-            if status == "CORRELACIONADO_PROCEDIMENTO_ADICIONAL":
+            if linha.get("MetodoMatch") == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL":
                 linha["StatusTUSS"] = "TUSS_PROC_ADICIONAL_RECONHECIDO"
             continue
 
@@ -2977,8 +2977,8 @@ def _refinar_status_por_valor(df: pd.DataFrame) -> pd.DataFrame:
     ValorLiberado_REPASSE é menor que ValorEstimado_TUSS (tolerância 5%).
 
     Casos cobertos:
-    - valor_rep == 0 e status ainda não é GLOSA → CORRELACIONADO_COM_GLOSA_TOTAL
-    - 0 < valor_rep < valor_est * 0.95        → CORRELACIONADO_COM_GLOSA_PARCIAL
+    - valor_rep == 0 e val_est > 0 → CORRELACIONADO (glosa total — ver ValorLiberado_REPASSE)
+    - 0 < valor_rep < val_est*0.95 → CORRELACIONADO (glosa parcial — ver ValorLiberado_REPASSE)
 
     Requer que _enriquecer_com_valores_tuss já tenha rodado (coluna ValorEstimado_TUSS).
     """
@@ -3004,9 +3004,9 @@ def _refinar_status_por_valor(df: pd.DataFrame) -> pd.DataFrame:
             continue
         val_rep = _extrair_valor_numerico(val_rep_raw)
         if val_rep == 0:
-            df.at[i, "StatusCorrelacao"] = "CORRELACIONADO_COM_GLOSA_TOTAL"
+            df.at[i, "StatusCorrelacao"] = "CORRELACIONADO"
         elif val_rep < val_est * 0.95:
-            df.at[i, "StatusCorrelacao"] = "CORRELACIONADO_COM_GLOSA_PARCIAL"
+            df.at[i, "StatusCorrelacao"] = "CORRELACIONADO"
 
     return df
 
@@ -3205,21 +3205,13 @@ def correlacionar_csv_arquivos(
                 valor_rep   = _extrair_valor_numerico(melhor_match.get("ValorLiberado", "0"))
                 status_base = _determinar_status_correlacao(valor_rep, True)
 
-                # Sufixo de rastreabilidade por método de correlação
-                if metodo_match == "3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA":
-                    status = f"{status_base}_FALLBACK_1"
-                elif metodo_match == "4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL":
-                    status = f"{status_base}_FALLBACK_2"
-                elif metodo_match == "2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO":
-                    status = f"{status_base}_VIA_NR_ATENDIMENTO"
-                else:
-                    status = status_base
+                status = status_base
 
                 # Ajuste A: sinaliza procedimentos anatomicamente divergentes para revisão humana
                 # (ex: ENDOSCOPIA da PRODUCAO casou com "Colonoscopia" do REPASSE via
                 # similaridade acidental de string — precisam ser conferidos manualmente)
                 if _sao_anatomicamente_divergentes(proc_prod, melhor_match.get("Procedimento", "")):
-                    status = f"{status}_PROCEDIMENTO_DIVERGENTE"
+                    metodo_match = f"{metodo_match}_PROCEDIMENTO_DIVERGENTE"
 
                 linha_corr["SimilaridadeProcedimento"] = f"{melhor_score:.2f}"
                 linha_corr["MetodoMatch"]              = metodo_match
@@ -3312,7 +3304,7 @@ def correlacionar_csv_arquivos(
                     _datas_f5 = [data_rep]
                 for _dc in _datas_f5:
                     if (paciente_norm, _dc) in _corr_idx:
-                        status_repasse = "CORRELACIONADO_PROCEDIMENTO_ADICIONAL"
+                        status_repasse = "CORRELACIONADO"
                         linha_corr["MetodoMatch"] = "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL"
                         break
 
@@ -3537,20 +3529,10 @@ COLUNAS_ESPERADAS = [
 ]
 
 LABEL_STATUS_CORR: dict[str, str] = {
-    "CORRELACIONADO":                                              "Pago e Conferido",
-    "CORRELACIONADO_COM_GLOSA_PARCIAL":                           "Pago a Menor – Glosa Parcial",
-    "CORRELACIONADO_COM_GLOSA_TOTAL":                             "Glosado – Valor Zerado",
-    "CORRELACIONADO_VIA_NR_ATENDIMENTO":                          "Pago – Identificado pelo Nº de Atendimento",
-    "CORRELACIONADO_FALLBACK_1":                                  "Pago – Nome com Variação Gráfica (Conferir)",
-    "CORRELACIONADO_FALLBACK_2":                                  "Pago – Vinculado com Data Diferente (Conferir)",
-    "CORRELACIONADO_PROCEDIMENTO_ADICIONAL":                      "Pago como Procedimento Adicional do Episódio",
-    "CORRELACIONADO_PROCEDIMENTO_DIVERGENTE":                     "Pago com Código de Procedimento Diferente",
-    "CORRELACIONADO_FALLBACK_1_PROCEDIMENTO_DIVERGENTE":          "Nome com Variação + Proc. Diferente (Revisar)",
-    "CORRELACIONADO_FALLBACK_2_PROCEDIMENTO_DIVERGENTE":          "Data Diferente + Proc. Divergente (Revisar)",
-    "CORRELACIONADO_VIA_NR_ATENDIMENTO_PROCEDIMENTO_DIVERGENTE":  "Nº Atend. + Proc. Diferente (Revisar)",
-    "NAO_FATURADO_NO_REPASSE":                                    "Procedimento não Repassado pelo Hospital",
-    "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO":                       "Pago pelo Hospital sem Registro na Produção",
-    "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO":                      "Cobrança Fora do Período Analisado",
+    "CORRELACIONADO":                        "Pago e Conferido",
+    "NAO_FATURADO_NO_REPASSE":               "Procedimento não Repassado pelo Hospital",
+    "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO":  "Pago pelo Hospital sem Registro na Produção",
+    "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO": "Cobrança Fora do Período Analisado",
 }
 
 LABEL_STATUS_TUSS: dict[str, str] = {
@@ -4600,33 +4582,36 @@ def main():
                     total_linhas = len(df_final)
 
                     status_col = df_final.get("StatusCorrelacao", pd.Series(dtype=str))
+                    mm = df_final.get("MetodoMatch", pd.Series(dtype=str)).fillna("")
                     # Correlacionados = qualquer status que comece com CORRELACIONADO
                     n_correlacionado  = status_col.str.upper().str.startswith("CORRELACIONADO").sum()
                     n_divergencia     = status_col.str.upper().str.contains("DIVERGENCIA_VALOR").sum()
-                    n_glosa           = status_col.str.upper().str.contains("GLOSA").sum()
+                    # Glosa: CORRELACIONADO onde ValorLiberado_REPASSE < 95% do ValorEstimado_TUSS
+                    _vlrep = df_final.get("ValorLiberado_REPASSE", pd.Series(dtype=str)).fillna("").map(_extrair_valor_numerico)
+                    _vlest = df_final.get("ValorEstimado_TUSS",    pd.Series(dtype=str)).fillna("").map(_extrair_valor_numerico)
+                    n_glosa = int((status_col.str.upper().str.startswith("CORRELACIONADO") & (_vlest > 0) & (_vlrep < _vlest * 0.95)).sum())
                     n_nao_faturado    = (status_col.str.upper() == "NAO_FATURADO_NO_REPASSE").sum()
-                    n_proc_divergente = status_col.str.upper().str.contains("PROCEDIMENTO_DIVERGENTE").sum()
+                    n_proc_divergente = mm.str.contains("PROCEDIMENTO_DIVERGENTE").sum()
 
                     col_m1.metric("📄 Total de Linhas",         total_linhas)
                     col_m2.metric("✅ Correlacionados",          n_correlacionado)
                     col_m3.metric("⚠️ Divergências de Valor",    int(n_divergencia))
                     col_m4.metric("🚫 Glosas",                   int(n_glosa))
                     col_m5.metric("❌ Não Faturados",             int(n_nao_faturado))
-                    
+
                     # Métricas detalhadas de correlação
                     st.markdown("---")
                     st.markdown("### 📊 Resultados da Correlação")
 
                     n_repasse_nao_identificado = (status_col.str.upper() == "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO").sum()
-                    n_companion               = (status_col.str.upper() == "CORRELACIONADO_PROCEDIMENTO_ADICIONAL").sum()
+                    n_companion               = (mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL").sum()
                     n_fora_periodo            = (status_col.str.upper() == "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO").sum()
 
-                    # Contagem por MetodoMatch
-                    mm = df_final.get("MetodoMatch", pd.Series(dtype=str)).fillna("")
-                    n_m1  = (mm == "1_NOME_COMPLETO_DATA_PROCEDIMENTO").sum()
+                    # Contagem por MetodoMatch (inclui sufixo _PROCEDIMENTO_DIVERGENTE quando aplicável)
+                    n_m1  = mm.str.startswith("1_NOME_COMPLETO_DATA_PROCEDIMENTO").sum()
                     n_m2  = mm.str.startswith("2_FALLBACK_NR-ATENDIMENTO").sum()
-                    n_m3  = (mm == "3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA").sum()
-                    n_m4  = (mm == "4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL").sum()
+                    n_m3  = mm.str.startswith("3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA").sum()
+                    n_m4  = mm.str.startswith("4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL").sum()
                     n_m5  = (mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL").sum()
                     n_sem = (mm == "SEM_MATCH").sum()
 
@@ -4865,18 +4850,18 @@ def main():
                                 if "StatusCorrelacao" in df.columns else _empty)
                         _tss = (df["StatusTUSS"].fillna("").str.upper()
                                 if "StatusTUSS" in df.columns else _empty)
+                        _mm  = (df["MetodoMatch"].fillna("").str.upper()
+                                if "MetodoMatch" in df.columns else _empty)
                         cor  = pd.Series("", index=df.index, dtype=str)
-                        cor[_st.str.contains("NAO_IDENTIFICADO",    na=False)] = "background-color: #e2e3e5"
-                        cor[_st.str.contains("DATA_FORA_DO_PERIODO",na=False)] = "background-color: #e2e3e5; color: #888"
-                        cor[_st.str.contains("NAO_FATURADO",        na=False)] = "background-color: #f8d7da"
-                        cor[_st.str.contains("GLOSA",               na=False)] = "background-color: #f8d7da"
-                        cor[_st.str.contains("DIVERGENCIA",         na=False)] = "background-color: #fff3cd"
-                        cor[_st.str.contains("FALLBACK_2",          na=False)] = "background-color: #d1ecf1"
-                        cor[_st.str.contains("FALLBACK_1",          na=False)] = "background-color: #fff3cd"
-                        cor[_st.str.contains("PROCEDIMENTO_ADICIONAL", na=False)] = "background-color: #d4edda"
-                        cor[_st.str.contains("VIA_NR_ATENDIMENTO",  na=False)] = "background-color: #cce5ff"
-                        cor[_st == "CORRELACIONADO"]                            = "background-color: #d4edda"
-                        cor[_st.str.contains("PROCEDIMENTO_DIVERGENTE", na=False)] = "background-color: #ffc107; color: #000"
+                        cor[_st.str.contains("NAO_IDENTIFICADO",     na=False)] = "background-color: #e2e3e5"
+                        cor[_st.str.contains("DATA_FORA_DO_PERIODO", na=False)] = "background-color: #e2e3e5; color: #888"
+                        cor[_st.str.contains("NAO_FATURADO",         na=False)] = "background-color: #f8d7da"
+                        cor[_st == "CORRELACIONADO"]                             = "background-color: #d4edda"
+                        cor[_mm.str.contains("3_FALLBACK_NOME_PARCIAL",  na=False)] = "background-color: #fff3cd"
+                        cor[_mm.str.contains("4_FALLBACK_NOME_COMPLETO", na=False)] = "background-color: #d1ecf1"
+                        cor[_mm.str.contains("2_FALLBACK_NR-ATENDIMENTO",na=False)] = "background-color: #cce5ff"
+                        cor[_mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL"]    = "background-color: #d4edda"
+                        cor[_mm.str.contains("PROCEDIMENTO_DIVERGENTE",  na=False)] = "background-color: #ffc107; color: #000"
                         # TUSS sobrescreve — máxima prioridade
                         # Verde: procedimento OK / reconhecido / incorporado
                         cor[_tss == "TUSS_PROC_PRINCIPAL_OK"]                    = "background-color: #d4edda"
