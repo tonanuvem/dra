@@ -5198,24 +5198,9 @@ def main():
                                     _row["lote_processamento"] = lote_novo
                                     records.append(_row)
 
-                                # ── Registra o lote em lotes_carga (antes do INSERT) ─
-                                # A linha em lotes_carga serve como ponto de controle:
-                                # o frontend usa para exibir status e permitir invalidação.
-                                supabase \
-                                    .table("lotes_carga") \
-                                    .insert({
-                                        "lote_id":        lote_novo,
-                                        "status":         "ativo",
-                                        "total_inserido": len(records),
-                                    }) \
-                                    .execute()
-
-                                # ── INSERT novo lote ─────────────────────────────────
-                                # upsert com ignore_duplicates=True equivale a
-                                # ON CONFLICT (lote_processamento, hash_conteudo) DO NOTHING,
-                                # silenciando duplicatas intra-batch.
-                                # NÃO há mais DELETE de lotes anteriores: o trigger de
-                                # versionamento (bloco D) desativa registros supersedidos.
+                                # ── 1. INSERT dados em correlacao_endoscopia ─────────
+                                # lotes_carga só é registrado APÓS sucesso total,
+                                # evitando registros órfãos em caso de falha.
                                 with st.spinner(f"📤 Inserindo {len(records):,} registros (lote {lote_novo})..."):
                                     _batch_size = 500
                                     _n_batches  = -(-len(records) // _batch_size)  # ceil division
@@ -5234,17 +5219,20 @@ def main():
                                             f"Inserindo lote {_i // _batch_size + 1}/{_n_batches}"
                                         )
 
-                                # ── Atualiza contagens em lotes_carga ────────────────
-                                # Consulta o banco para obter o total real de válidos e
-                                # duplicatas (trigger pode ter ajustado is_duplicata).
+                                # ── 2. Registra lote em lotes_carga (só após sucesso) ─
+                                # Consulta o banco para obter contagens reais
+                                # (trigger pode ter ajustado is_duplicata).
+                                _total_lote    = len(records)
+                                _total_dup     = 0
+                                _total_validos = len(records)
                                 try:
                                     _cnt_resp = supabase \
                                         .table("correlacao_endoscopia") \
                                         .select("is_duplicata", count="exact") \
                                         .eq("lote_processamento", lote_novo) \
                                         .execute()
-                                    _total_lote    = _cnt_resp.count or len(records)
-                                    _cnt_dup_resp  = supabase \
+                                    _total_lote = _cnt_resp.count or len(records)
+                                    _cnt_dup_resp = supabase \
                                         .table("correlacao_endoscopia") \
                                         .select("id", count="exact") \
                                         .eq("lote_processamento", lote_novo) \
@@ -5252,26 +5240,37 @@ def main():
                                         .execute()
                                     _total_dup     = _cnt_dup_resp.count or 0
                                     _total_validos = _total_lote - _total_dup
-                                    supabase \
-                                        .table("lotes_carga") \
-                                        .update({
-                                            "total_inserido":  _total_lote,
-                                            "total_validos":   _total_validos,
-                                            "total_duplicatas": _total_dup,
-                                        }) \
-                                        .eq("lote_id", lote_novo) \
-                                        .execute()
                                 except Exception:
                                     pass  # contagens são informativas — não bloquear o fluxo
+
+                                supabase \
+                                    .table("lotes_carga") \
+                                    .insert({
+                                        "lote_id":          lote_novo,
+                                        "status":           "ativo",
+                                        "total_inserido":   _total_lote,
+                                        "total_validos":    _total_validos,
+                                        "total_duplicatas": _total_dup,
+                                    }) \
+                                    .execute()
 
                                 st.success(
                                     f"✅ **{len(records):,} registros** carregados com sucesso!\n\n"
                                     f"🏷️ Lote: `{lote_novo}`"
                                 )
-                                
+
                         except ImportError:
                             st.error("❌ Biblioteca supabase-py não instalada. Execute: pip install supabase")
                         except Exception as e:
+                            # ── Limpeza: remove lote órfão de lotes_carga se existir ─
+                            try:
+                                supabase \
+                                    .table("lotes_carga") \
+                                    .delete() \
+                                    .eq("lote_id", lote_novo) \
+                                    .execute()
+                            except Exception:
+                                pass
                             st.error(f"❌ Erro ao recarregar dados: {e}")
                             logger.error(f"Erro ao recarregar Supabase: {e}", exc_info=True)
 

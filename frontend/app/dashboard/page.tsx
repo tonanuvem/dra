@@ -55,16 +55,6 @@ export default function DashboardPage() {
           loading={loading}
         />
         <KpiCard
-          title="Glosas Parciais"
-          value={loading ? '—' : stats.glosaParci.toLocaleString('pt-BR')}
-          subtitle="Valor pago a menor pelo convênio"
-          pctLabel={stats.total ? `${((stats.glosaParci / stats.total) * 100).toFixed(0)}% do total` : undefined}
-          icon={TrendingDown}
-          color="orange"
-          href={canFinancial ? '/faturamento?tab=downgrade' : undefined}
-          loading={loading}
-        />
-        <KpiCard
           title="Pendentes Revisão"
           value={loading ? '—' : stats.pendentesRevisao.toLocaleString('pt-BR')}
           subtitle="Match incerto — ação requerida"
