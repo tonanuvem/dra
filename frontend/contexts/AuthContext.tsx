@@ -110,15 +110,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // transição para evitar que o AuthGuard veja user≠null / profile=null
         // simultaneamente e dispare um signOut() prematuro.
         setLoading(true)
-        const u = session?.user ?? null
-        setUser(u)
-        if (u) {
-          const p = await loadProfile(u.id)
-          if (mounted) setProfile(p)
-        } else {
-          if (mounted) setProfile(null)
+        try {
+          const u = session?.user ?? null
+          setUser(u)
+          if (u) {
+            const p = await loadProfile(u.id)
+            if (mounted) setProfile(p)
+          } else {
+            if (mounted) setProfile(null)
+          }
+        } finally {
+          if (mounted) setLoading(false)
         }
-        if (mounted) setLoading(false)
       }
     )
 

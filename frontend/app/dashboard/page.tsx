@@ -7,7 +7,7 @@ import { StatusChart } from '@/components/dashboard/StatusChart'
 import { WorkQueues } from '@/components/dashboard/WorkQueues'
 import { PermissionGate } from '@/components/auth/PermissionGate'
 import { formatCurrency } from '@/lib/utils'
-import { CheckCircle, XCircle, AlertTriangle, DollarSign, TrendingDown, Activity } from 'lucide-react'
+import { CheckCircle, XCircle, AlertTriangle, DollarSign, Activity } from 'lucide-react'
 
 export default function DashboardPage() {
   const { stats, loading } = useDashboardStats()
