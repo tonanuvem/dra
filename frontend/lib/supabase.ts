@@ -9,4 +9,12 @@ const supabaseKey = (
   ''
 )
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    // Reduz a frequência de verificação de sessão para evitar re-renders
+    storageKey: 'supabase.auth.token',
+  },
+})

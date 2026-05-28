@@ -100,10 +100,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // TOKEN_REFRESHED e USER_UPDATED são eventos silenciosos: o JWT foi
         // renovado automaticamente pelo Supabase (ex: ao voltar para a aba).
-        // O usuário e o profile não mudam — apenas atualizamos o objeto user
-        // sem exibir spinner, evitando o flash de carregamento ao retornar à aba.
+        // O usuário e o profile não mudam — NÃO atualizamos NADA para evitar
+        // re-renderizações desnecessárias que causam o spinner de loading.
         if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
-          setUser(session?.user ?? null)
+          // Não faz nada - o token é atualizado internamente pelo Supabase
           return
         }
 

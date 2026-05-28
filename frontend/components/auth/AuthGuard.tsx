@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -14,9 +14,15 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, profile, permissions, loading } = useAuth()
   const router   = useRouter()
   const pathname = usePathname()
+  const lastCheckRef = useRef<string>('')
 
   useEffect(() => {
     if (loading) return
+
+    // Evita re-execução desnecessária se nada mudou
+    const checkKey = `${!!user}-${!!profile}-${profile?.ativo}-${pathname}`
+    if (lastCheckRef.current === checkKey) return
+    lastCheckRef.current = checkKey
 
     const isPublic = PUBLIC_ROUTES.some(r => pathname.startsWith(r))
 
