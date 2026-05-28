@@ -117,11 +117,21 @@ ALTER TABLE public.correlacao_endoscopia
   ADD COLUMN IF NOT EXISTS rollback_operacao_id UUID
     REFERENCES public.operacoes_rollback(id) ON DELETE SET NULL;
 
-ALTER TABLE public.lotes_carga
-  ADD CONSTRAINT IF NOT EXISTS lotes_carga_rollback_fk
-  FOREIGN KEY (rollback_operacao_id)
-  REFERENCES public.operacoes_rollback(id)
-  ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname    = 'lotes_carga_rollback_fk'
+       AND conrelid   = 'public.lotes_carga'::regclass
+  ) THEN
+    ALTER TABLE public.lotes_carga
+      ADD CONSTRAINT lotes_carga_rollback_fk
+      FOREIGN KEY (rollback_operacao_id)
+      REFERENCES public.operacoes_rollback(id)
+      ON DELETE SET NULL;
+  END IF;
+END;
+$$;
 
 COMMENT ON COLUMN public.correlacao_endoscopia.rollback_operacao_id IS
   'Referência à operação de invalidação que desativou este registro (NULL = trigger de versioning).';
