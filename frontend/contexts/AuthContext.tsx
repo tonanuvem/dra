@@ -69,13 +69,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    // Flag: sinaliza que getSession() já resolveu. O Supabase v2 dispara
+    // SIGNED_IN logo após getSession() bem-sucedido — ignoramos esse evento
+    // duplicado para evitar que setLoading(true) reinicie o ciclo.
+    let initialSessionResolved = false
 
-    // Garante que o loading seja liberado mesmo se getSession() travar (ex: chave inválida)
     const fallbackTimer = setTimeout(() => {
       if (mounted) setLoading(false)
     }, 6000)
 
-    // Carrega sessão inicial (evita flash de tela de login ao recarregar)
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         clearTimeout(fallbackTimer)
@@ -87,28 +89,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (mounted) setProfile(p)
         }
         if (mounted) setLoading(false)
+        initialSessionResolved = true
       })
       .catch(() => {
         clearTimeout(fallbackTimer)
         if (mounted) setLoading(false)
+        initialSessionResolved = true
       })
 
-    // Listener para login / logout / expiração de token
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
 
-        // TOKEN_REFRESHED e USER_UPDATED são eventos silenciosos: o JWT foi
-        // renovado automaticamente pelo Supabase (ex: ao voltar para a aba).
-        // O usuário e o profile não mudam — NÃO atualizamos NADA para evitar
-        // re-renderizações desnecessárias que causam o spinner de loading.
+        // Eventos silenciosos — nunca alteram user/profile nem disparam loading.
         if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'INITIAL_SESSION') {
           return
         }
 
-        // Para SIGNED_IN e SIGNED_OUT: mantém loading=true durante toda a
-        // transição para evitar que o AuthGuard veja user≠null / profile=null
-        // simultaneamente e dispare um signOut() prematuro.
+        // SIGNED_IN duplicado: o Supabase dispara SIGNED_IN como consequência do
+        // getSession() bem-sucedido, após a promise resolver. Se a sessão inicial
+        // já foi resolvida, ignoramos — o estado já está correto.
+        if (event === 'SIGNED_IN' && initialSessionResolved) {
+          return
+        }
+
+        // SIGNED_IN real (login explícito) ou SIGNED_OUT: atualiza tudo.
         setLoading(true)
         try {
           const u = session?.user ?? null
