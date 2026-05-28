@@ -96,13 +96,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         if (!mounted) return
+        // Mantém loading=true durante toda a transição de estado para evitar
+        // que o AuthGuard interprete o intervalo user≠null / profile=null
+        // (entre setUser e o retorno do loadProfile) como "sessão inválida"
+        // e dispare um signOut() prematuro.
+        setLoading(true)
         const u = session?.user ?? null
         setUser(u)
         if (u) {
           const p = await loadProfile(u.id)
           if (mounted) setProfile(p)
         } else {
-          setProfile(null)
+          if (mounted) setProfile(null)
         }
         if (mounted) setLoading(false)
       }
