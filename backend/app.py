@@ -51,18 +51,18 @@ _ROLE_COLORS = {"editor": "#b45309", "financeiro": "#1d4ed8", "admin": "#b91c1c"
 
 
 def _supa_auth():
-    """Cliente Supabase com chave anon — usado só para autenticação."""
+    """Cliente Supabase com chave publishable — usado só para autenticação."""
     return _supa_create_client(
         os.getenv("SUPABASE_URL", ""),
-        os.getenv("SUPABASE_KEY", ""),
+        os.getenv("SUPABASE_PUBLISHABLE_KEY", ""),
     )
 
 
 def _supa_service():
-    """Cliente Supabase com service_role — leitura de profiles sem RLS."""
+    """Cliente Supabase com secret key — leitura de profiles sem RLS."""
     return _supa_create_client(
         os.getenv("SUPABASE_URL", ""),
-        os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY", ""),
+        os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_PUBLISHABLE_KEY", ""),
     )
 
 
@@ -5016,25 +5016,25 @@ def main():
 
                             # Configuração do Supabase
                             supabase_url = os.getenv("SUPABASE_URL")
-                            # Prefere service_role (bypassa RLS); cai para anon com aviso
+                            # Prefere secret key (bypassa RLS); cai para publishable com aviso
                             supabase_key = (
-                                os.getenv("SUPABASE_SERVICE_KEY")
-                                or os.getenv("SUPABASE_KEY")
+                                os.getenv("SUPABASE_SECRET_KEY")
+                                or os.getenv("SUPABASE_PUBLISHABLE_KEY")
                             )
-                            _usando_service_key = bool(os.getenv("SUPABASE_SERVICE_KEY"))
+                            _usando_secret_key = bool(os.getenv("SUPABASE_SECRET_KEY"))
 
                             if not supabase_url or not supabase_key:
                                 st.error(
                                     "❌ Variáveis de ambiente não configuradas. "
-                                    "Defina **SUPABASE_URL** e **SUPABASE_SERVICE_KEY** "
-                                    "(chave service_role do projeto Supabase)."
+                                    "Defina **SUPABASE_URL** e **SUPABASE_SECRET_KEY** "
+                                    "(secret key do projeto Supabase)."
                                 )
-                            elif not _usando_service_key:
+                            elif not _usando_secret_key:
                                 st.error(
-                                    "❌ **SUPABASE_SERVICE_KEY** não configurada. "
-                                    "A chave `anon` não tem permissão para inserir dados (RLS). "
-                                    "Adicione a variável `SUPABASE_SERVICE_KEY` com a chave **service_role** "
-                                    "encontrada em: Supabase → Project Settings → API → service_role."
+                                    "❌ **SUPABASE_SECRET_KEY** não configurada. "
+                                    "A chave publishable não tem permissão para inserir dados (RLS). "
+                                    "Adicione a variável `SUPABASE_SECRET_KEY` com a **secret key** "
+                                    "encontrada em: Supabase → Project Settings → API Keys → Secret keys."
                                 )
                             else:
                                 with st.spinner("🔄 Conectando ao Supabase..."):
