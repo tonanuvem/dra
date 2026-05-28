@@ -9,7 +9,7 @@ import { TABLES } from '@/lib/config'
 import {
   Layers, CalendarDays, CheckCircle2, Unlink,
   Clock, AlertTriangle, Loader2, Copy, Ban,
-  TrendingUp, BadgeCheck, RefreshCw, X, ChevronDown,
+  TrendingUp, BadgeCheck, RefreshCw, X, ChevronDown, Trash2,
 } from 'lucide-react'
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -202,40 +202,48 @@ function StatusMiniBar({ dist, total }: { dist: Record<string, number>; total: n
 }
 
 // ── Card de lote ───────────────────────────────────────────────
-function LoteCard({ lote, canInvalidar, onInvalidar }: {
+function LoteCard({ lote, canInvalidar, onInvalidar, onRemover }: {
   lote: ReturnType<typeof useCarregamentos>['lotes'][number]
   canInvalidar: boolean
   onInvalidar: (lote: string) => void
+  onRemover:   (lote: string) => void
 }) {
-  const isInvalidado = lote.status === 'invalidado'
+  const isInvalidado  = lote.status === 'invalidado'
+  const isIncompleto  = lote.status === 'iniciado'
+  const isErro        = lote.status === 'erro'
+  const isProblematico = isIncompleto || isErro
   const [showHistorico, setShowHistorico] = useState(false)
 
   return (
     <div className={`bg-white rounded-xl border overflow-hidden ${
-      isInvalidado
-        ? 'border-red-200 opacity-75'
-        : lote.isAtual
-          ? 'border-blue-300 shadow-sm'
-          : 'border-gray-200'
+      isProblematico
+        ? 'border-orange-300 shadow-sm'
+        : isInvalidado
+          ? 'border-red-200 opacity-75'
+          : lote.isAtual
+            ? 'border-blue-300 shadow-sm'
+            : 'border-gray-200'
     }`}>
       {/* Header do card */}
       <div className={`px-5 py-3 flex items-center justify-between ${
-        isInvalidado
-          ? 'bg-red-50 border-b border-red-200'
-          : lote.isAtual
-            ? 'bg-blue-50 border-b border-blue-200'
-            : 'bg-gray-50 border-b border-gray-200'
+        isProblematico
+          ? 'bg-orange-50 border-b border-orange-200'
+          : isInvalidado
+            ? 'bg-red-50 border-b border-red-200'
+            : lote.isAtual
+              ? 'bg-blue-50 border-b border-blue-200'
+              : 'bg-gray-50 border-b border-gray-200'
       }`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <Layers className={`w-4 h-4 flex-shrink-0 ${
-            isInvalidado ? 'text-red-400' : lote.isAtual ? 'text-blue-600' : 'text-gray-400'
+            isProblematico ? 'text-orange-500' : isInvalidado ? 'text-red-400' : lote.isAtual ? 'text-blue-600' : 'text-gray-400'
           }`} />
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-semibold text-gray-900 font-mono">
                 {lote.lote_processamento}
               </span>
-              {lote.isAtual && !isInvalidado && (
+              {lote.isAtual && !isInvalidado && !isProblematico && (
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-600 text-white flex-shrink-0">
                   ATUAL
                 </span>
@@ -245,7 +253,17 @@ function LoteCard({ lote, canInvalidar, onInvalidar }: {
                   INVALIDADO
                 </span>
               )}
-              {lote.supersedidos > 0 && !isInvalidado && (
+              {isIncompleto && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-orange-500 text-white flex-shrink-0">
+                  INCOMPLETO
+                </span>
+              )}
+              {isErro && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500 text-white flex-shrink-0">
+                  ERRO
+                </span>
+              )}
+              {lote.supersedidos > 0 && !isInvalidado && !isProblematico && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200 flex-shrink-0">
                   {lote.supersedidos} supersedidos
                 </span>
@@ -270,8 +288,20 @@ function LoteCard({ lote, canInvalidar, onInvalidar }: {
             </button>
           )}
 
-          {/* Botão invalidar — apenas para lotes ativos e não-admin */}
-          {canInvalidar && !isInvalidado && (
+          {/* Botão Remover — para lotes incompletos/erro (admin) */}
+          {canInvalidar && isProblematico && (
+            <button
+              onClick={() => onRemover(lote.lote_processamento)}
+              title="Remover carga incompleta permanentemente"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-white bg-red-600 hover:bg-red-700 border border-red-700 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Remover
+            </button>
+          )}
+
+          {/* Botão Invalidar — apenas para lotes ativos */}
+          {canInvalidar && !isInvalidado && !isProblematico && (
             <button
               onClick={() => onInvalidar(lote.lote_processamento)}
               title="Invalidar carga (apenas admin)"
@@ -283,6 +313,19 @@ function LoteCard({ lote, canInvalidar, onInvalidar }: {
           )}
         </div>
       </div>
+
+      {/* Faixa de aviso para cargas incompletas */}
+      {isProblematico && (
+        <div className="px-5 py-2.5 bg-orange-50 border-b border-orange-100 text-xs text-orange-700 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+          {isIncompleto
+            ? 'Carga iniciada mas não finalizada — dados podem estar incompletos. Use "Remover" e tente novamente.'
+            : 'Erro durante a carga — dados parcialmente inseridos. Use "Remover" para limpar e tente novamente.'}
+          {lote.total > 0 && (
+            <span className="ml-1 font-semibold">({lote.total} linha(s) inserida(s) parcialmente)</span>
+          )}
+        </div>
+      )}
 
       {/* Faixa de motivo de invalidação */}
       {isInvalidado && showHistorico && lote.motivoInvalidade && (
@@ -490,6 +533,60 @@ function CarregamentosContent() {
     await refetch()
   }
 
+  // ── Remoção de carga incompleta/erro (soft-delete) ─────────
+  async function handleRemover(loteId: string) {
+    if (!user?.id) throw new Error('Usuário não autenticado.')
+
+    const confirmar = window.confirm(
+      `Remover a carga incompleta "${loteId}"?\n\n` +
+      'Os dados parcialmente inseridos serão desativados (soft-delete) ' +
+      'e o lote ficará marcado como "removido". Esta ação pode ser auditada.'
+    )
+    if (!confirmar) return
+
+    const motivo = 'Carga incompleta removida pelo administrador'
+
+    // 1. Registra operação de auditoria
+    const { data: op, error: opErr } = await supabase
+      .from('operacoes_rollback')
+      .insert({
+        tipo:           'remocao_incompleta',
+        lote_id:        loteId,
+        executado_por:  user.id,
+        motivo,
+        total_afetados: 0,
+      })
+      .select('id')
+      .single()
+    if (opErr) throw opErr
+
+    // 2. Soft-delete em correlacao_endoscopia (mesmo padrão do Invalidar)
+    await supabase
+      .from(TABLES.correlacao)
+      .update({
+        ativo:                false,
+        desativado_em:        new Date().toISOString(),
+        desativado_por:       user.id,
+        motivo_desativacao:   motivo,
+        rollback_operacao_id: op.id,
+      })
+      .eq('lote_processamento', loteId)
+
+    // 3. Marca lote como "removido" em lotes_carga
+    await supabase
+      .from('lotes_carga')
+      .update({
+        status:               'invalidado',
+        invalidado_em:        new Date().toISOString(),
+        invalidado_por:       user.id,
+        motivo_invalidade:    motivo,
+        rollback_operacao_id: op.id,
+      })
+      .eq('lote_id', loteId)
+
+    await refetch()
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -529,6 +626,7 @@ function CarregamentosContent() {
   const totalRevisados  = lotesAtivos.reduce((s, l) => s + l.revisados, 0)
   const totalPendentes  = lotesAtivos.reduce((s, l) => s + l.pendentes, 0)
   const invalidados     = lotes.filter(l => l.status === 'invalidado').length
+  const incompletos     = lotes.filter(l => l.status === 'iniciado' || l.status === 'erro').length
 
   return (
     <>
@@ -541,6 +639,9 @@ function CarregamentosContent() {
               {lotesAtivos.length} {lotesAtivos.length === 1 ? 'lote ativo' : 'lotes ativos'}{' '}
               {invalidados > 0 && (
                 <span className="text-red-500">· {invalidados} invalidado{invalidados > 1 ? 's' : ''}</span>
+              )}
+              {incompletos > 0 && (
+                <span className="text-orange-500 font-semibold">· {incompletos} incompleto{incompletos > 1 ? 's' : ''}</span>
               )}
               {' '}· {totalRegistros.toLocaleString('pt-BR')} registros únicos ativos
             </p>
@@ -574,6 +675,7 @@ function CarregamentosContent() {
               lote={lote}
               canInvalidar={permissions?.canManageUsers ?? false}
               onInvalidar={loteId => setModalLote(loteId)}
+              onRemover={loteId => handleRemover(loteId)}
             />
           ))}
         </div>

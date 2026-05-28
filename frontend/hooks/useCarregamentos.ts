@@ -24,7 +24,7 @@ const SELECT_COLS = [
 
 export interface LoteMeta {
   lote_id:              string
-  status:               'ativo' | 'invalidado'
+  status:               'ativo' | 'invalidado' | 'iniciado' | 'erro'
   invalidado_em:        string | null
   invalidado_por:       string | null
   motivo_invalidade:    string | null
@@ -34,7 +34,7 @@ export interface LoteMeta {
 export interface LoteStats {
   lote_processamento: string
   /** Status administrativo (de lotes_carga) */
-  status: 'ativo' | 'invalidado'
+  status: 'ativo' | 'invalidado' | 'iniciado' | 'erro'
   /** Timestamp de quando o lote foi inserido no Supabase */
   carregado_em: string
   /** Total de linhas incluindo duplicatas */
@@ -193,6 +193,16 @@ export function useCarregamentos() {
         return !meta || meta.status === 'ativo'
       })
 
+      // ── 4b. Adiciona lotes "ghost" — existem em lotes_carga mas sem
+      //        rows em correlacao_endoscopia (falha total no INSERT de dados)
+      for (const [loteId, meta] of metaByLoteId) {
+        if ((meta.status === 'iniciado' || meta.status === 'erro') && !byLote.has(loteId)) {
+          byLote.set(loteId, [])
+          lotesOrdenados.push(loteId)
+        }
+      }
+      lotesOrdenados.sort().reverse()
+
       // ── 5. Calcula estatísticas por lote ──────────────────────
       const result: LoteStats[] = lotesOrdenados.map(lote => {
         const rows = byLote.get(lote)!
@@ -240,7 +250,7 @@ export function useCarregamentos() {
 
         return {
           lote_processamento: lote,
-          status:             (meta?.status ?? 'ativo') as 'ativo' | 'invalidado',
+          status:             (meta?.status ?? 'ativo') as 'ativo' | 'invalidado' | 'iniciado' | 'erro',
           carregado_em,
           total:              rows.length,
           validos:            validos.length,

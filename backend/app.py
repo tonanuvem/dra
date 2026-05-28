@@ -3134,6 +3134,64 @@ def _refinar_status_por_valor(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _verificar_erros_producao(df: pd.DataFrame) -> tuple:
+    """
+    Verifica erros de qualidade nos dados de PRODUCAO.
+
+    Regras verificadas:
+      • Data_PRODUCAO deve conter uma data válida no formato dd/mm/yyyy
+      • Paciente_PRODUCAO não pode ser vazio
+      • NrAtendimento_PRODUCAO não pode ser vazio
+      • Procedimento_PRODUCAO não pode ser vazio
+
+    Returns:
+        (resumo: dict, df_erros: DataFrame com as linhas problemáticas e colunas de diagnóstico)
+    """
+    import re as _re
+
+    _DATE_RE = _re.compile(r"^\d{2}/\d{2}/\d{4}$")
+
+    def _data_invalida(v) -> bool:
+        if not isinstance(v, str) or not v.strip():
+            return True  # vazio também é inválido
+        s = v.strip()
+        if not _DATE_RE.match(s):
+            return True
+        try:
+            datetime.strptime(s, "%d/%m/%Y")
+            return False
+        except ValueError:
+            return True
+
+    def _vazio(v) -> bool:
+        return not isinstance(v, str) or not v.strip()
+
+    empty = pd.Series("", index=df.index)
+
+    mask_data    = df.get("Data_PRODUCAO",          empty).map(_data_invalida)
+    mask_pac     = df.get("Paciente_PRODUCAO",       empty).map(_vazio)
+    mask_nratend = df.get("NrAtendimento_PRODUCAO",  empty).map(_vazio)
+    mask_proc    = df.get("Procedimento_PRODUCAO",   empty).map(_vazio)
+
+    mask_qualquer = mask_data | mask_pac | mask_nratend | mask_proc
+
+    df_erros = df[mask_qualquer].copy()
+    df_erros["❌ Data inválida"]       = mask_data[mask_qualquer].map(lambda x: "Sim" if x else "")
+    df_erros["❌ Paciente vazio"]      = mask_pac[mask_qualquer].map(lambda x: "Sim" if x else "")
+    df_erros["❌ NrAtendimento vazio"] = mask_nratend[mask_qualquer].map(lambda x: "Sim" if x else "")
+    df_erros["❌ Procedimento vazio"]  = mask_proc[mask_qualquer].map(lambda x: "Sim" if x else "")
+
+    resumo = {
+        "total":              int(mask_qualquer.sum()),
+        "data_invalida":      int(mask_data.sum()),
+        "paciente_vazio":     int(mask_pac.sum()),
+        "nratendimento_vazio":int(mask_nratend.sum()),
+        "procedimento_vazio": int(mask_proc.sum()),
+    }
+
+    return resumo, df_erros
+
+
 def correlacionar_csv_arquivos(
     csv_producao: str,
     csv_repasse: str,
@@ -4363,6 +4421,58 @@ def main():
         if not results:
             st.info("Execute a análise na aba Execução")
         else:
+            # ── Erros encontrados na PRODUCAO ─────────────────────────────────
+            _csvs_brutos = st.session_state.get("csvs_brutos", {})
+            _csv_prod_r3 = next(
+                (txt for txt in _csvs_brutos.values()
+                 if "TipoArquivo" in txt and len(txt.split("\n")) > 1
+                 and "PRODUCAO" in txt.split("\n")[1]),
+                None,
+            )
+            if _csv_prod_r3:
+                _err_key = f"erros_prod_{hash(_csv_prod_r3[:300])}"
+                if _err_key not in st.session_state:
+                    _df_prod_r3 = texto_para_dataframe(_csv_prod_r3)
+                    if _df_prod_r3 is not None and not _df_prod_r3.empty:
+                        st.session_state[_err_key] = _verificar_erros_producao(_df_prod_r3)
+                    else:
+                        st.session_state[_err_key] = ({"total": 0}, pd.DataFrame())
+
+                _resumo_err, _df_erros = st.session_state[_err_key]
+
+                if _resumo_err["total"] > 0:
+                    with st.expander(
+                        f"🚨 Erros encontrados na PRODUÇÃO — **{_resumo_err['total']} linha(s)** com problemas",
+                        expanded=True,
+                    ):
+                        _ce1, _ce2, _ce3, _ce4 = st.columns(4)
+                        _ce1.metric("📅 Data inválida",        _resumo_err["data_invalida"])
+                        _ce2.metric("👤 Paciente vazio",        _resumo_err["paciente_vazio"])
+                        _ce3.metric("🔢 NrAtendimento vazio",   _resumo_err["nratendimento_vazio"])
+                        _ce4.metric("🏥 Procedimento vazio",    _resumo_err["procedimento_vazio"])
+
+                        _cols_exib = [
+                            c for c in [
+                                "Data_PRODUCAO", "Paciente_PRODUCAO",
+                                "NrAtendimento_PRODUCAO", "Procedimento_PRODUCAO",
+                                "AbaOrigemDados_PRODUCAO",
+                                "❌ Data inválida", "❌ Paciente vazio",
+                                "❌ NrAtendimento vazio", "❌ Procedimento vazio",
+                            ] if c in _df_erros.columns
+                        ]
+                        st.dataframe(_df_erros[_cols_exib], use_container_width=True)
+
+                        _ts_err = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        st.download_button(
+                            label="⬇️ Download erros de PRODUÇÃO (CSV)",
+                            data=_df_erros.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                            file_name=f"erros_producao_{_ts_err}.csv",
+                            mime="text/csv",
+                        )
+                else:
+                    st.success("✅ Nenhum erro encontrado nos dados de PRODUÇÃO.")
+
+            # ── Resultados por arquivo ─────────────────────────────────────────
             for file, result in results.items():
                 st.subheader(file)
 
@@ -4503,12 +4613,65 @@ def main():
                     )
                 
                 st.divider()
-                
-                btn_label_corr = f"🤖 Gerar Correlação com {provider}" if usa_llm_corr else "🔄 Gerar Correlação Local"
-                btn_disabled_corr = usa_llm_corr and not api_key and provider != "Ollama"
 
-                if st.button(btn_label_corr, type="primary", disabled=btn_disabled_corr):
-                    
+                # ── Checkbox: excluir linhas com erro (só modo local) ─────────
+                _err_key_t4 = f"erros_prod_{hash((csv_producao or '')[:300])}"
+                if _err_key_t4 not in st.session_state:
+                    if not df_prod_prev.empty:
+                        st.session_state[_err_key_t4] = _verificar_erros_producao(df_prod_prev)
+                    else:
+                        st.session_state[_err_key_t4] = ({"total": 0}, pd.DataFrame())
+                _resumo_t4, _ = st.session_state[_err_key_t4]
+                _n_erros_t4 = _resumo_t4["total"]
+
+                _col_btn, _col_chk = st.columns([2, 3])
+                with _col_btn:
+                    btn_label_corr    = f"🤖 Gerar Correlação com {provider}" if usa_llm_corr else "🔄 Gerar Correlação Local"
+                    btn_disabled_corr = usa_llm_corr and not api_key and provider != "Ollama"
+                    _clicked_corr = st.button(btn_label_corr, type="primary", disabled=btn_disabled_corr)
+                with _col_chk:
+                    if not usa_llm_corr:
+                        _lbl_chk = (
+                            f"Excluir dados de PRODUÇÃO com erros ({_n_erros_t4} linha(s))"
+                            if _n_erros_t4 > 0
+                            else "Excluir dados de PRODUÇÃO com erros (nenhum encontrado)"
+                        )
+                        _excluir_erros = st.checkbox(
+                            _lbl_chk,
+                            value=True,
+                            disabled=_n_erros_t4 == 0,
+                            help=(
+                                "Quando marcado, as linhas com Data inválida, Paciente, "
+                                "NrAtendimento ou Procedimento vazios são removidas antes "
+                                "de iniciar a correlação."
+                            ),
+                        )
+                    else:
+                        _excluir_erros = False
+
+                if _clicked_corr:
+
+                    # ── Filtra PRODUCAO removendo linhas com erro (se checkbox ativo) ──
+                    _csv_producao_corr = csv_producao
+                    if not usa_llm_corr and _excluir_erros and _n_erros_t4 > 0:
+                        try:
+                            _df_prod_filtrado = df_prod_prev[
+                                ~st.session_state[_err_key_t4][1].index.isin(
+                                    df_prod_prev.index
+                                )
+                            ]
+                            # Recria o índice da máscara de erros para filtrar corretamente
+                            _, _df_erros_t4 = st.session_state[_err_key_t4]
+                            _df_prod_limpo = df_prod_prev.drop(index=_df_erros_t4.index, errors="ignore")
+                            _csv_producao_corr = _df_prod_limpo.to_csv(index=False)
+                            st.info(
+                                f"🧹 {_n_erros_t4} linha(s) com erro excluída(s) da PRODUCAO antes da correlação. "
+                                f"Correlacionando com {len(_df_prod_limpo)} linha(s)."
+                            )
+                        except Exception as _ef:
+                            logger.warning(f"Falha ao filtrar erros de PRODUCAO: {_ef}")
+                            _csv_producao_corr = csv_producao
+
                     # ── MODO LOCAL: correlacionar_csv_arquivos (com thread para não travar UI) ──
                     if not usa_llm_corr:
                         with st.status("🔄 Correlacionando localmente...", expanded=True) as status_local:
@@ -4533,7 +4696,7 @@ def main():
 
                             def _run_local_corr(
                                 holder,
-                                _prod=csv_producao,
+                                _prod=_csv_producao_corr,
                                 _rep=csv_repasse,
                                 _tab=_tabela_tuss_pre,
                                 _vals=_valores_tuss_pre,
@@ -5216,79 +5379,100 @@ def main():
                                     _row["lote_processamento"] = lote_novo
                                     records.append(_row)
 
-                                # ── 1. INSERT dados em correlacao_endoscopia ─────────
-                                # lotes_carga só é registrado APÓS sucesso total,
-                                # evitando registros órfãos em caso de falha.
-                                with st.spinner(f"📤 Inserindo {len(records):,} registros (lote {lote_novo})..."):
-                                    _batch_size = 500
-                                    _n_batches  = -(-len(records) // _batch_size)  # ceil division
-                                    for _i in range(0, len(records), _batch_size):
-                                        _batch = records[_i:_i + _batch_size]
-                                        supabase \
-                                            .table("correlacao_endoscopia") \
-                                            .upsert(
-                                                _batch,
-                                                on_conflict="lote_processamento,hash_conteudo",
-                                                ignore_duplicates=True,
-                                            ) \
-                                            .execute()
-                                        st.progress(
-                                            (_i + len(_batch)) / len(records),
-                                            f"Inserindo lote {_i // _batch_size + 1}/{_n_batches}"
-                                        )
-
-                                # ── 2. Registra lote em lotes_carga (só após sucesso) ─
-                                # Consulta o banco para obter contagens reais
-                                # (trigger pode ter ajustado is_duplicata).
-                                _total_lote    = len(records)
-                                _total_dup     = 0
-                                _total_validos = len(records)
-                                try:
-                                    _cnt_resp = supabase \
-                                        .table("correlacao_endoscopia") \
-                                        .select("is_duplicata", count="exact") \
-                                        .eq("lote_processamento", lote_novo) \
-                                        .execute()
-                                    _total_lote = _cnt_resp.count or len(records)
-                                    _cnt_dup_resp = supabase \
-                                        .table("correlacao_endoscopia") \
-                                        .select("id", count="exact") \
-                                        .eq("lote_processamento", lote_novo) \
-                                        .eq("is_duplicata", True) \
-                                        .execute()
-                                    _total_dup     = _cnt_dup_resp.count or 0
-                                    _total_validos = _total_lote - _total_dup
-                                except Exception:
-                                    pass  # contagens são informativas — não bloquear o fluxo
-
+                                # ── 1. Registra lote como "iniciado" em lotes_carga ──
+                                # Checkpoint inicial: permite ao frontend identificar
+                                # cargas incompletas mesmo que o INSERT de dados falhe.
                                 supabase \
                                     .table("lotes_carga") \
                                     .insert({
-                                        "lote_id":          lote_novo,
-                                        "status":           "ativo",
-                                        "total_inserido":   _total_lote,
-                                        "total_validos":    _total_validos,
-                                        "total_duplicatas": _total_dup,
+                                        "lote_id":        lote_novo,
+                                        "status":         "iniciado",
+                                        "total_inserido": len(records),
                                     }) \
                                     .execute()
 
-                                st.success(
-                                    f"✅ **{len(records):,} registros** carregados com sucesso!\n\n"
-                                    f"🏷️ Lote: `{lote_novo}`"
-                                )
+                                try:
+                                    # ── 2. INSERT dados em correlacao_endoscopia ──────
+                                    with st.spinner(f"📤 Inserindo {len(records):,} registros (lote {lote_novo})..."):
+                                        _batch_size = 500
+                                        _n_batches  = -(-len(records) // _batch_size)
+                                        for _i in range(0, len(records), _batch_size):
+                                            _batch = records[_i:_i + _batch_size]
+                                            supabase \
+                                                .table("correlacao_endoscopia") \
+                                                .upsert(
+                                                    _batch,
+                                                    on_conflict="lote_processamento,hash_conteudo",
+                                                    ignore_duplicates=True,
+                                                ) \
+                                                .execute()
+                                            st.progress(
+                                                (_i + len(_batch)) / len(records),
+                                                f"Inserindo lote {_i // _batch_size + 1}/{_n_batches}"
+                                            )
+
+                                    # ── 3. Apura contagens reais no banco ─────────────
+                                    _total_lote    = len(records)
+                                    _total_dup     = 0
+                                    _total_validos = len(records)
+                                    try:
+                                        _cnt_resp = supabase \
+                                            .table("correlacao_endoscopia") \
+                                            .select("is_duplicata", count="exact") \
+                                            .eq("lote_processamento", lote_novo) \
+                                            .execute()
+                                        _total_lote = _cnt_resp.count or len(records)
+                                        _cnt_dup_resp = supabase \
+                                            .table("correlacao_endoscopia") \
+                                            .select("id", count="exact") \
+                                            .eq("lote_processamento", lote_novo) \
+                                            .eq("is_duplicata", True) \
+                                            .execute()
+                                        _total_dup     = _cnt_dup_resp.count or 0
+                                        _total_validos = _total_lote - _total_dup
+                                    except Exception:
+                                        pass  # contagens informativas — não bloquear
+
+                                    # ── 4. Atualiza lotes_carga → "ativo" ─────────────
+                                    supabase \
+                                        .table("lotes_carga") \
+                                        .update({
+                                            "status":           "ativo",
+                                            "total_inserido":   _total_lote,
+                                            "total_validos":    _total_validos,
+                                            "total_duplicatas": _total_dup,
+                                        }) \
+                                        .eq("lote_id", lote_novo) \
+                                        .execute()
+
+                                    st.success(
+                                        f"✅ **{len(records):,} registros** carregados com sucesso!\n\n"
+                                        f"🏷️ Lote: `{lote_novo}`"
+                                    )
+
+                                except Exception as _e_insert:
+                                    # ── Erro durante INSERT: marca lote como "erro" ───
+                                    # Os dados parcialmente inseridos ficam no banco com
+                                    # lote_processamento = lote_novo e podem ser removidos
+                                    # pelo frontend ao invalidar/excluir este lote.
+                                    try:
+                                        supabase \
+                                            .table("lotes_carga") \
+                                            .update({"status": "erro"}) \
+                                            .eq("lote_id", lote_novo) \
+                                            .execute()
+                                    except Exception:
+                                        pass
+                                    st.error(f"❌ Erro ao recarregar dados: {_e_insert}")
+                                    st.warning(
+                                        f"⚠️ O lote `{lote_novo}` foi marcado como **erro** em `lotes_carga`. "
+                                        "Use o frontend para remover a carga incompleta antes de tentar novamente."
+                                    )
+                                    logger.error(f"Erro INSERT Supabase lote {lote_novo}: {_e_insert}", exc_info=True)
 
                         except ImportError:
                             st.error("❌ Biblioteca supabase-py não instalada. Execute: pip install supabase")
                         except Exception as e:
-                            # ── Limpeza: remove lote órfão de lotes_carga se existir ─
-                            try:
-                                supabase \
-                                    .table("lotes_carga") \
-                                    .delete() \
-                                    .eq("lote_id", lote_novo) \
-                                    .execute()
-                            except Exception:
-                                pass
                             st.error(f"❌ Erro ao recarregar dados: {e}")
                             logger.error(f"Erro ao recarregar Supabase: {e}", exc_info=True)
 
