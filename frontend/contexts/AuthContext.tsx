@@ -12,6 +12,7 @@ export interface Profile {
   id:            string
   email:         string
   nome:          string | null
+  cpf:           string | null
   role:          Role
   ativo:         boolean
   criado_em:     string
@@ -51,7 +52,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const loadProfile = useCallback(async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, email, nome, role, ativo, criado_em, atualizado_em')
+      .select('id, email, nome, cpf, role, ativo, criado_em, atualizado_em')
       .eq('id', userId)
       .single()
 

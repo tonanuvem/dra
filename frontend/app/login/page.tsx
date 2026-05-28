@@ -6,6 +6,22 @@ import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Stethoscope, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
 
+// ── Helpers CPF ───────────────────────────────────────────────
+
+/** Remove tudo que não é dígito */
+function soDigitos(v: string): string {
+  return v.replace(/\D/g, '')
+}
+
+/**
+ * Detecta se o input é um CPF.
+ * Aceita com ou sem máscara: "123.456.789-01" ou "12345678901".
+ * Não valida dígito verificador — isso é feito no backend.
+ */
+function isCpf(input: string): boolean {
+  return soDigitos(input).length === 11 && !input.includes('@')
+}
+
 // ── Formulário de login ───────────────────────────────────────
 
 function LoginForm() {
@@ -13,11 +29,11 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const erroParam    = searchParams.get('erro')
 
-  const [email,     setEmail]     = useState('')
-  const [senha,     setSenha]     = useState('')
-  const [showSenha, setShowSenha] = useState(false)
-  const [loading,   setLoading]   = useState(false)
-  const [erro,      setErro]      = useState<string | null>(null)
+  const [credential, setCredential] = useState('')
+  const [senha,      setSenha]      = useState('')
+  const [showSenha,  setShowSenha]  = useState(false)
+  const [loading,    setLoading]    = useState(false)
+  const [erro,       setErro]       = useState<string | null>(null)
 
   useEffect(() => {
     if (erroParam === 'conta-inativa') {
@@ -30,40 +46,66 @@ function LoginForm() {
     setLoading(true)
     setErro(null)
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email:    email.trim().toLowerCase(),
-      password: senha,
-    })
+    try {
+      let loginEmail = credential.trim().toLowerCase()
 
-    if (error) {
-      setErro('E-mail ou senha incorretos. Verifique seus dados e tente novamente.')
+      // ── Se for CPF: resolve o e-mail a partir da tabela profiles ──
+      if (isCpf(loginEmail)) {
+        const cpfNumeros = soDigitos(loginEmail)
+        const { data: profileByCpf, error: cpfErr } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('cpf', cpfNumeros)
+          .maybeSingle()
+
+        if (cpfErr || !profileByCpf?.email) {
+          setErro('CPF não encontrado. Verifique o número ou use seu e-mail.')
+          setLoading(false)
+          return
+        }
+
+        loginEmail = profileByCpf.email
+      }
+
+      // ── Autenticação com e-mail resolvido ─────────────────────
+      const { error } = await supabase.auth.signInWithPassword({
+        email:    loginEmail,
+        password: senha,
+      })
+
+      if (error) {
+        setErro('Credenciais incorretas. Verifique seus dados e tente novamente.')
+        setLoading(false)
+        return
+      }
+
+      // AuthContext detecta a sessão e AuthGuard redireciona para /dashboard
+      router.replace('/dashboard')
+    } catch {
+      setErro('Erro inesperado. Tente novamente.')
       setLoading(false)
-      return
     }
-
-    // AuthContext detecta a sessão e AuthGuard redireciona para /dashboard
-    router.replace('/dashboard')
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {/* E-mail */}
+      {/* E-mail ou CPF */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1.5">
-          E-mail
+          E-mail ou CPF
         </label>
         <input
-          type="email"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
+          type="text"
+          value={credential}
+          onChange={e => setCredential(e.target.value)}
           required
-          autoComplete="email"
+          autoComplete="username"
           autoFocus
           disabled={loading}
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
                      disabled:bg-gray-50 disabled:text-gray-400 transition-colors"
-          placeholder="seu@email.com"
+          placeholder="seu@email.com ou 000.000.000-00"
         />
       </div>
 
@@ -107,7 +149,7 @@ function LoginForm() {
       {/* Botão */}
       <button
         type="submit"
-        disabled={loading || !email || !senha}
+        disabled={loading || !credential || !senha}
         className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800
                    disabled:opacity-50 disabled:cursor-not-allowed
                    text-white font-semibold py-2.5 rounded-lg text-sm

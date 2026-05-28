@@ -4474,7 +4474,7 @@ def main():
                         _ts_err = datetime.now().strftime("%Y%m%d_%H%M%S")
                         st.download_button(
                             label="⬇️ Download erros de PRODUÇÃO (CSV)",
-                            data=_df_erros.to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                            data=_df_erros.rename_axis("Linha").to_csv(index=True, encoding="utf-8-sig").encode("utf-8-sig"),
                             file_name=f"erros_producao_{_ts_err}.csv",
                             mime="text/csv",
                         )

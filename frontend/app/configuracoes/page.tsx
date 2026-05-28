@@ -36,10 +36,26 @@ interface UserProfile {
   id: string
   email: string
   nome: string | null
+  cpf: string | null
   role: Role
   ativo: boolean
   criado_em: string
   last_sign_in_at: string | null
+}
+
+/** Formata 11 dígitos sem pontuação em "000.000.000-00" */
+function formatCpf(cpf: string | null | undefined): string {
+  if (!cpf) return ''
+  const d = cpf.replace(/\D/g, '')
+  if (d.length !== 11) return cpf
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`
+}
+
+/** Remove formatação do CPF e retorna null para strings vazias */
+function normalizeCpf(v: string): string | null {
+  const d = v.replace(/\D/g, '')
+  if (!d) return null
+  return d
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,6 +176,7 @@ function EditUserModal({
   const [role, setRole] = useState<Role>(user.role)
   const [ativo, setAtivo] = useState(user.ativo)
   const [nome, setNome] = useState(user.nome ?? '')
+  const [cpf, setCpf] = useState(formatCpf(user.cpf))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [changePasswordMode, setChangePasswordMode] = useState(false)
@@ -177,7 +194,13 @@ function EditUserModal({
     const isOwnPasswordChange = changePasswordMode && !!newPassword.trim() && user.id === currentUser?.id
     try {
       const headers = await authHeaders()
-      const payload: Record<string, unknown> = { id: user.id, role, ativo, nome }
+      const cpfNorm = normalizeCpf(cpf)
+      if (cpf.trim() && (!cpfNorm || cpfNorm.length !== 11)) {
+        setError('CPF inválido — deve ter 11 dígitos')
+        setSaving(false)
+        return
+      }
+      const payload: Record<string, unknown> = { id: user.id, role, ativo, nome, cpf: cpfNorm }
       if (changePasswordMode && newPassword.trim()) payload.password = newPassword.trim()
       const res = await fetch('/api/admin/users', {
         method: 'PATCH',
@@ -239,6 +262,20 @@ function EditUserModal({
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="Nome completo"
             />
+          </div>
+
+          {/* CPF */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1">CPF <span className="font-normal text-gray-400">(opcional)</span></label>
+            <input
+              type="text"
+              value={cpf}
+              onChange={e => setCpf(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="000.000.000-00"
+              maxLength={14}
+            />
+            <p className="mt-1 text-xs text-gray-400">Permite login com CPF além do e-mail.</p>
           </div>
 
           {/* Role */}
@@ -361,13 +398,14 @@ function generatePassword(): string {
 function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvited: () => void }) {
   const [email, setEmail]           = useState('')
   const [nome, setNome]             = useState('')
+  const [cpf, setCpf]               = useState('')
   const [role, setRole]             = useState<Role>('editor')
   const [password, setPassword]     = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading]       = useState(false)
   const [error, setError]           = useState<string | null>(null)
   // Após criação: guarda as credenciais para exibir ao admin
-  const [credentials, setCredentials] = useState<{ email: string; password: string } | null>(null)
+  const [credentials, setCredentials] = useState<{ email: string; cpf: string | null; password: string } | null>(null)
   const [copied, setCopied]         = useState(false)
 
   function handleGenerate() {
@@ -378,6 +416,11 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
 
   async function handleCreate() {
     if (!password.trim()) { setError('Defina ou gere uma senha'); return }
+    const cpfNorm = normalizeCpf(cpf)
+    if (cpf.trim() && (!cpfNorm || cpfNorm.length !== 11)) {
+      setError('CPF inválido — deve ter 11 dígitos')
+      return
+    }
     setLoading(true)
     setError(null)
     try {
@@ -385,11 +428,11 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
       const res = await fetch('/api/admin/invite', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ email: email.trim(), nome: nome.trim(), role, password }),
+        body: JSON.stringify({ email: email.trim(), nome: nome.trim(), role, password, cpf: cpfNorm }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error ?? 'Erro ao criar usuário')
-      setCredentials({ email: email.trim(), password })
+      setCredentials({ email: email.trim(), cpf: cpfNorm, password })
       onInvited()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido')
@@ -400,9 +443,10 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
 
   async function copyCredentials() {
     if (!credentials) return
-    await navigator.clipboard.writeText(
-      `Login: ${credentials.email}\nSenha: ${credentials.password}`
-    )
+    const lines = [`Login: ${credentials.email}`]
+    if (credentials.cpf) lines.push(`CPF: ${formatCpf(credentials.cpf)}`)
+    lines.push(`Senha: ${credentials.password}`)
+    await navigator.clipboard.writeText(lines.join('\n'))
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -440,9 +484,15 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
                   Credenciais de acesso
                 </p>
                 <div className="space-y-1">
-                  <p className="text-xs text-gray-500">Login</p>
+                  <p className="text-xs text-gray-500">E-mail</p>
                   <p className="text-sm font-mono text-white break-all">{credentials.email}</p>
                 </div>
+                {credentials.cpf && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500">CPF (login alternativo)</p>
+                    <p className="text-sm font-mono text-blue-300">{formatCpf(credentials.cpf)}</p>
+                  </div>
+                )}
                 <div className="space-y-1">
                   <p className="text-xs text-gray-500">Senha inicial</p>
                   <p className="text-lg font-mono font-bold text-yellow-400 tracking-widest">
@@ -497,6 +547,19 @@ function InviteUserModal({ onClose, onInvited }: { onClose: () => void; onInvite
                   onChange={e => setNome(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="Nome completo"
+                />
+              </div>
+
+              {/* CPF */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">CPF <span className="font-normal text-gray-400">(opcional)</span></label>
+                <input
+                  type="text"
+                  value={cpf}
+                  onChange={e => setCpf(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="000.000.000-00"
+                  maxLength={14}
                 />
               </div>
 
@@ -699,7 +762,12 @@ function UsersTab() {
                   <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0 text-xs font-bold text-white">
                     {(u.nome || u.email || '?')[0].toUpperCase()}
                   </div>
-                  <span className="text-sm font-medium text-gray-800 truncate">{u.nome || '—'}</span>
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium text-gray-800 truncate block">{u.nome || '—'}</span>
+                    {u.cpf && (
+                      <span className="text-xs text-gray-400 font-mono">{formatCpf(u.cpf)}</span>
+                    )}
+                  </div>
                 </div>
 
                 {/* E-mail */}

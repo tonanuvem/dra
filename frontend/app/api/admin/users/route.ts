@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   const { data: profiles, error } = await supabaseAdmin
     .from('profiles')
-    .select('id, email, nome, role, ativo, criado_em, atualizado_em')
+    .select('id, email, nome, cpf, role, ativo, criado_em, atualizado_em')
     .order('criado_em', { ascending: false })
 
   if (error) {
@@ -70,7 +70,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null)
-  const { id, role, ativo, nome, password } = body ?? {}
+  const { id, role, ativo, nome, password, cpf } = body ?? {}
 
   if (!id) {
     return NextResponse.json({ error: 'id é obrigatório' }, { status: 400 })
@@ -85,10 +85,25 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
   }
 
+  // Normaliza CPF — aceita string com ou sem máscara, ou null/'' para limpar
+  let cpfUpdate: string | null | undefined = undefined
+  if (cpf !== undefined) {
+    if (cpf === null || cpf === '') {
+      cpfUpdate = null  // limpa o CPF
+    } else {
+      const digits = String(cpf).replace(/\D/g, '')
+      if (digits.length !== 11) {
+        return NextResponse.json({ error: 'CPF inválido — deve ter 11 dígitos' }, { status: 400 })
+      }
+      cpfUpdate = digits
+    }
+  }
+
   const update: Record<string, unknown> = {}
   if (role !== undefined) update.role = role
   if (ativo !== undefined) update.ativo = ativo
   if (nome !== undefined) update.nome = nome
+  if (cpfUpdate !== undefined) update.cpf = cpfUpdate
 
   const { error } = await supabaseAdmin
     .from('profiles')

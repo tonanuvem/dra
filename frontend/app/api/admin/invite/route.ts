@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   // 2. Parse body
   const body = await req.json().catch(() => null)
-  const { email, nome, role, password } = body ?? {}
+  const { email, nome, role, password, cpf } = body ?? {}
 
   if (!email || !role || !password) {
     return NextResponse.json({ error: 'email, role e password são obrigatórios' }, { status: 400 })
@@ -51,12 +51,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'role inválido' }, { status: 400 })
   }
 
+  // Normaliza CPF: apenas dígitos, NULL se ausente ou tamanho inválido
+  const cpfNorm: string | null = (() => {
+    if (!cpf) return null
+    const digits = String(cpf).replace(/\D/g, '')
+    return digits.length === 11 ? digits : null
+  })()
+  if (cpf && !cpfNorm) {
+    return NextResponse.json({ error: 'CPF inválido — deve ter 11 dígitos' }, { status: 400 })
+  }
+
   // 3. Criar usuário com senha conhecida (email já confirmado — sem email de verificação)
   const { data: createData, error: createError } = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
-    user_metadata: { nome: nome ?? '' },
+    user_metadata: { nome: nome ?? '', ...(cpfNorm ? { cpf: cpfNorm } : {}) },
   })
 
   if (createError) {
@@ -65,7 +75,7 @@ export async function POST(req: NextRequest) {
 
   const userId = createData.user?.id
 
-  // 4. Atualizar profile com role, nome e ativo
+  // 4. Atualizar profile com role, nome, cpf e ativo
   if (userId) {
     await supabaseAdmin.from('profiles').upsert({
       id: userId,
@@ -73,6 +83,7 @@ export async function POST(req: NextRequest) {
       nome: nome ?? '',
       role,
       ativo: true,
+      ...(cpfNorm !== null ? { cpf: cpfNorm } : {}),
     })
   }
 
