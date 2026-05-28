@@ -1,9 +1,10 @@
 -- ============================================================
 --  RBAC Migration — Endoscopia Auditoria de Faturamento
 --  Execute este script no SQL Editor do Supabase (uma vez).
+--  É idempotente: pode ser reexecutado sem efeitos colaterais.
 --
 --  Ordem de execução (dependências respeitadas):
---    1. Tabela profiles
+--    1. Tabela profiles (inclui coluna cpf)
 --    2. Função get_my_role()   ← deve existir ANTES das policies RLS
 --    3. Policies RLS           ← usa get_my_role()
 --    4. Trigger auto-profile   ← dispara ao criar usuário em auth.users
@@ -23,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
                             REFERENCES auth.users(id) ON DELETE CASCADE,
   email         TEXT        NOT NULL,
   nome          TEXT,
+  cpf           TEXT        DEFAULT NULL,
   role          TEXT        NOT NULL DEFAULT 'visualizador'
                             CHECK (role IN ('visualizador', 'editor', 'financeiro', 'admin')),
   ativo         BOOLEAN     NOT NULL DEFAULT true,
@@ -30,13 +32,27 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Índice para buscas por role (listagem de usuários no painel admin)
+-- Garante a coluna cpf em bancos que já tinham a tabela sem ela (idempotente)
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS cpf TEXT DEFAULT NULL;
+
+-- Constraint de unicidade: dois usuários não podem ter o mesmo CPF.
+-- DROP + ADD é o padrão idempotente para constraints no PostgreSQL.
+ALTER TABLE public.profiles
+  DROP CONSTRAINT IF EXISTS profiles_cpf_unique;
+ALTER TABLE public.profiles
+  ADD CONSTRAINT profiles_cpf_unique UNIQUE (cpf);
+
+-- Índices
 CREATE INDEX IF NOT EXISTS profiles_role_idx ON public.profiles (role);
+CREATE INDEX IF NOT EXISTS profiles_cpf_idx  ON public.profiles (cpf)
+  WHERE cpf IS NOT NULL;
 
 COMMENT ON TABLE  public.profiles             IS 'Perfis de acesso dos usuários do sistema de auditoria';
 COMMENT ON COLUMN public.profiles.role        IS 'visualizador | editor | financeiro | admin';
 COMMENT ON COLUMN public.profiles.ativo       IS 'false = usuário bloqueado (sem acesso ao frontend e ao backend)';
 COMMENT ON COLUMN public.profiles.nome        IS 'Nome de exibição — preenchido no convite ou pelo próprio usuário';
+COMMENT ON COLUMN public.profiles.cpf         IS 'CPF do usuário — 11 dígitos sem formatação (ex: "12345678901"). Opcional, único.';
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -75,8 +91,8 @@ CREATE POLICY "profiles: self read"
   FOR SELECT
   USING (auth.uid() = id);
 
--- 3b. Cada usuário atualiza o próprio perfil (somente nome)
---     A cláusula WITH CHECK impede escalar o próprio role ou desativar a conta
+-- 3b. Cada usuário atualiza o próprio perfil (nome e cpf).
+--     WITH CHECK impede escalar o próprio role ou desativar a conta.
 DROP POLICY IF EXISTS "profiles: self update (nome only)" ON public.profiles;
 CREATE POLICY "profiles: self update (nome only)"
   ON public.profiles
@@ -84,7 +100,7 @@ CREATE POLICY "profiles: self update (nome only)"
   USING (auth.uid() = id)
   WITH CHECK (
     auth.uid() = id
-    AND role = (SELECT role FROM public.profiles WHERE id = auth.uid())
+    AND role  = (SELECT role  FROM public.profiles WHERE id = auth.uid())
     AND ativo = (SELECT ativo FROM public.profiles WHERE id = auth.uid())
   );
 
@@ -99,7 +115,8 @@ CREATE POLICY "profiles: admin full access"
 
 -- ─────────────────────────────────────────────────────────────
 -- 4. TRIGGER: auto-criar profile ao cadastrar usuário
---    Funciona para cadastro manual e convite via inviteUserByEmail
+--    Funciona para cadastro manual e convite via inviteUserByEmail.
+--    Aceita cpf opcional em user_metadata (normalizado para 11 dígitos).
 -- ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -108,12 +125,24 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
+DECLARE
+  _cpf TEXT;
 BEGIN
-  INSERT INTO public.profiles (id, email, nome)
+  -- Normaliza CPF: remove tudo que não é dígito; NULL se vazio ou ≠ 11 dígitos
+  _cpf := REGEXP_REPLACE(
+            COALESCE(NEW.raw_user_meta_data->>'cpf', ''),
+            '[^0-9]', '', 'g'
+          );
+  IF LENGTH(_cpf) <> 11 THEN
+    _cpf := NULL;
+  END IF;
+
+  INSERT INTO public.profiles (id, email, nome, cpf)
   VALUES (
     NEW.id,
     NEW.email,
-    NULLIF(TRIM(NEW.raw_user_meta_data->>'nome'), '')
+    NULLIF(TRIM(NEW.raw_user_meta_data->>'nome'), ''),
+    _cpf
   )
   ON CONFLICT (id) DO NOTHING;  -- idempotente: não duplica se já existir
 
@@ -129,7 +158,7 @@ CREATE TRIGGER on_auth_user_created
   EXECUTE FUNCTION public.handle_new_user();
 
 COMMENT ON FUNCTION public.handle_new_user IS
-  'Cria automaticamente um profile com role=visualizador ao registrar novo usuário.';
+  'Cria automaticamente um profile com role=visualizador ao registrar novo usuário. Aceita cpf via user_metadata.';
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -165,6 +194,7 @@ CREATE OR REPLACE VIEW public.user_profiles_view AS
     p.id,
     p.email,
     p.nome,
+    p.cpf,
     p.role,
     p.ativo,
     p.criado_em,
@@ -174,7 +204,7 @@ CREATE OR REPLACE VIEW public.user_profiles_view AS
   JOIN auth.users u ON u.id = p.id;
 
 COMMENT ON VIEW public.user_profiles_view IS
-  'Visão segura para listagem de usuários no painel admin. Sujeita a RLS da tabela profiles.';
+  'Visão segura para listagem de usuários no painel admin. Inclui cpf. Sujeita a RLS da tabela profiles.';
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -184,6 +214,7 @@ COMMENT ON VIEW public.user_profiles_view IS
 DO $$
 DECLARE
   v_table  BOOLEAN;
+  v_cpf    BOOLEAN;
   v_fn     BOOLEAN;
   v_trig   BOOLEAN;
 BEGIN
@@ -191,6 +222,11 @@ BEGIN
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'profiles'
   ) INTO v_table;
+
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'cpf'
+  ) INTO v_cpf;
 
   SELECT EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -203,6 +239,7 @@ BEGIN
 
   RAISE NOTICE '=== RBAC Migration Check ===';
   RAISE NOTICE 'Tabela profiles ..... %', CASE WHEN v_table THEN 'OK ✓' ELSE 'FALHOU ✗' END;
+  RAISE NOTICE 'Coluna cpf .......... %', CASE WHEN v_cpf   THEN 'OK ✓' ELSE 'FALHOU ✗' END;
   RAISE NOTICE 'Função get_my_role .. %', CASE WHEN v_fn    THEN 'OK ✓' ELSE 'FALHOU ✗' END;
   RAISE NOTICE 'Trigger new_user .... %', CASE WHEN v_trig  THEN 'OK ✓' ELSE 'FALHOU ✗' END;
   RAISE NOTICE '============================';
@@ -308,12 +345,12 @@ $$;
 --
 --  Para convidar novos usuários após o setup:
 --    • Via painel Supabase: Authentication → Users → Invite User
---    • Via frontend (etapa 5 do plano): usa inviteUserByEmail()
---      com a SUPABASE_SERVICE_KEY (nunca exposta no frontend)
+--    • Via frontend: Configurações → Usuários e Acessos → Convidar usuário
 --
 --  Segurança garantida pelo RLS:
 --    • Usuários não veem profiles de outros
---    • Usuários não alteram o próprio role
+--    • Usuários não alteram o próprio role ou ativo
+--    • Usuários podem atualizar nome e cpf do próprio perfil
 --    • Apenas admin cria/edita/apaga profiles
 --    • get_my_role() usa SECURITY DEFINER (sem recursão RLS)
 --
