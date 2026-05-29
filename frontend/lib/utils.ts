@@ -30,14 +30,9 @@ export function getStatusCorrelacaoColor(status: StatusCorrelacao | null): strin
 
 export function getStatusTUSSColor(status: StatusTUSS | null): string {
   if (!status) return 'bg-gray-100 text-gray-600'
-  if (status.includes('OK') || status.includes('RECONHECIDO') || status.includes('FATURADOS') || status.includes('INCORPORADO')) {
-    return 'bg-green-100 text-green-800'
-  }
-  if (status.includes('DIVERGENTE') || status.includes('AUSENTE') || status.includes('COBRADO_COMO_SIMPLES')) {
-    return 'bg-orange-100 text-orange-800'
-  }
-  if (status === 'TUSS_NAO_FATURADO_MAPEADO') return 'bg-red-100 text-red-800'
-  if (status.includes('SEM_PRODUCAO') || status.includes('SEM_MAPEAMENTO')) return 'bg-gray-100 text-gray-600'
+  if (status.startsWith('OK_'))                   return 'bg-green-100 text-green-800'
+  if (status.startsWith('COBRAR_'))               return 'bg-red-100 text-red-800'
+  if (status.startsWith('CORRELACIONAR_MANUAL_')) return 'bg-yellow-100 text-yellow-800'
   return 'bg-gray-100 text-gray-600'
 }
 
@@ -88,6 +83,6 @@ export function needsHumanReview(row: { StatusCorrelacao: StatusCorrelacao | nul
   if (row.StatusCorrelacao === 'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO') return true
   if (m.includes('PROCEDIMENTO_DIVERGENTE')) return true
   if (reviewMetodos.some(r => m.startsWith(r))) return true
-  if (row.StatusTUSS === 'TUSS_COMBINACAO_SEM_MAPEAMENTO') return true
+  if (row.StatusTUSS === 'CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO') return true
   return false
 }

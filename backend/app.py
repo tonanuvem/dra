@@ -2859,6 +2859,38 @@ def _construir_desc_por_tuss_code(tabela_tuss: dict) -> dict:
     return desc_map
 
 
+def _build_upgrade_map(tabela_tuss: dict) -> dict[str, set]:
+    """
+    Extrai da tabela_tuss um índice {base_code → {upgrade_codes}}.
+
+    Baseado exclusivamente nas entradas com
+      TipoCobranca = 'unico_cod_tuss_inclui_proc_adicional_e_principal':
+    essas entradas representam o mesmo procedimento principal + adicional
+    cobrados num único código combinado.  O campo codigo_base_proc_principal
+    aponta o código simples do qual CodigosTUSS é o upgrade.
+
+    Exemplo:
+      codigo_base = '40201082'  (colonoscopia simples)
+      CodigosTUSS = '40202666'  (colonoscopia com biópsia)
+      → _upgrade_map['40201082'] = {'40202666', '40202542', ...}
+
+    Usado em verificar_tuss_adicionais() para classificar divergências entre
+    cod_repasse e esperado como UPGRADE (OK) ou DOWNGRADE (COBRAR).
+    """
+    _map: dict[str, set] = {}
+    for entry in tabela_tuss.values():
+        if str(entry.get("TipoCobranca", "")) != "unico_cod_tuss_inclui_proc_adicional_e_principal":
+            continue
+        base = str(entry.get("codigo_base_proc_principal", "")).replace(".0", "").strip()
+        codes = [
+            c.strip() for c in str(entry.get("CodigosTUSS", "")).split(",")
+            if c.strip() and c.strip() != "nan"
+        ]
+        if base and codes:
+            _map.setdefault(base, set()).update(codes)
+    return _map
+
+
 def _construir_desc_por_codigo(df_rep: pd.DataFrame) -> dict:
     """
     Retorna dict {codigo_tuss: descricao_oficial} extraído das linhas reais do REPASSE.
@@ -2889,9 +2921,10 @@ def _enriquecer_com_valores_tuss(
         Descricao_REPASSE; completa/melhora via desc_lookup quando disponível.
 
     ValorEstimado_TUSS é preenchido para status que indicam divergência ou ausência:
-      TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES
-      TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE
-      TUSS_CODIGO_PRINCIPAL_DIVERGENTE
+      COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES
+      COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE
+      COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE
+      COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE
     Também preenche NAO_FATURADO_NO_REPASSE quando CodigosTUSS_Esperados estiver preenchido.
     DescricaoTUSS é preenchida/completada para qualquer linha com CodigosTUSS_Esperados.
     """
@@ -2910,6 +2943,7 @@ def _enriquecer_com_valores_tuss(
         "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES",
         "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE",
         "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE",
+        "COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE",
     }
 
     vals:  list = [""] * len(df)
@@ -2968,13 +3002,21 @@ def verificar_tuss_adicionais(
     CodigosTUSS_Ausentes e DescricaoTUSS.
 
     Casos cobertos:
-    - Proc simples (sem PA): TUSS_PROC_PRINCIPAL_OK / TUSS_CODIGO_PRINCIPAL_DIVERGENTE
-    - PA incorporado no principal: TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL
-    - PA com código único: TUSS_PROC_ADICIONAL_RECONHECIDO / TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES
-    - PA com múltiplos códigos: TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS / TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE
-    - Companion rows (MetodoMatch=5_FALLBACK_COMPANION sem proc_princ): TUSS_PROC_ADICIONAL_RECONHECIDO
+    - Proc simples (sem PA): OK_TUSS_PROC_PRINCIPAL_OK / OK_TUSS_CODIGO_PRINCIPAL_UPGRADE /
+        COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE / COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE
+    - PA incorporado no principal: OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL
+    - PA com código único: OK_TUSS_PROC_ADICIONAL_RECONHECIDO / COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES
+    - PA com múltiplos códigos: OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS / COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE
+    - Companion rows (MetodoMatch=5_FALLBACK_COMPANION sem proc_princ): OK_TUSS_PROC_ADICIONAL_RECONHECIDO
+    - Proc simples com código divergente:
+        OK_TUSS_CODIGO_PRINCIPAL_UPGRADE    (repasse pagou upgrade do esperado)
+        COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE (repasse pagou versão mais simples)
+        COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE (relação não determinável)
     """
     from datetime import timedelta
+
+    # Índice de upgrades derivado da tabela_tuss (build único antes do loop)
+    _upgrade_map = _build_upgrade_map(tabela_tuss)
 
     for linha in linhas_resultado:
         status = str(linha.get("StatusCorrelacao", ""))
@@ -3050,11 +3092,18 @@ def verificar_tuss_adicionais(
         if sem_pa and tipo == "unico_cod_tuss_somente_proc_principal":
             cod_repasse = str(linha.get("CodigoTUSS_REPASSE", "")).replace(".0", "").strip()
             esperado    = codigos[0] if codigos else ""
-            linha["StatusTUSS"] = (
-                "OK_TUSS_PROC_PRINCIPAL_OK"
-                if esperado and cod_repasse == esperado
-                else "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE"
-            )
+            if esperado and cod_repasse == esperado:
+                # Código exato — OK
+                linha["StatusTUSS"] = "OK_TUSS_PROC_PRINCIPAL_OK"
+            elif cod_repasse and cod_repasse in _upgrade_map.get(esperado, set()):
+                # Repasse pagou um código que é upgrade do esperado (cobre mais) — OK
+                linha["StatusTUSS"] = "OK_TUSS_CODIGO_PRINCIPAL_UPGRADE"
+            elif esperado and esperado in _upgrade_map.get(cod_repasse, set()):
+                # Repasse pagou o código base mais simples; esperado é o upgrade — cobrar diferença
+                linha["StatusTUSS"] = "COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE"
+            else:
+                # Código divergente sem relação determinável na tabela
+                linha["StatusTUSS"] = "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE"
             if esperado:
                 linha["CodigosTUSS_Esperados"] = esperado
             if desc:
@@ -3749,6 +3798,8 @@ LABEL_STATUS_TUSS: dict[str, str] = {
     "OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS":          "Todos os Adicionais com Código Correto",
     "OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL":          "Adicional Incorporado ao Código Principal",
     "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES":     "Subcobrança: Adicional Faturado como Simples",
+    "OK_TUSS_CODIGO_PRINCIPAL_UPGRADE":                    "Repasse com Código Superior ao Esperado (sem cobrança)",
+    "COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE":              "Repasse com Código Mais Simples – Cobrar Diferença",
     "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE":             "Código do Proc. Principal Diverge do Esperado",
     "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE":     "Código Adicional Não Encontrado no Repasse",
     "COBRAR_TUSS_NAO_FATURADO_MAPEADO":                   "Não Cobrado – Código TUSS Identificado (Recuperável)",
@@ -4962,7 +5013,7 @@ def main():
                     tuss_col = df_final.get("StatusTUSS", pd.Series(dtype=str)).fillna("")
                     n_tuss_downgrade  = (tuss_col == "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES").sum()
                     n_tuss_ausente    = (tuss_col == "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE").sum()
-                    n_tuss_princ_div  = (tuss_col == "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE").sum()
+                    n_tuss_princ_div  = tuss_col.str.startswith("COBRAR_TUSS_CODIGO_PRINCIPAL_").sum()
                     n_tuss_ok         = (tuss_col == "OK_TUSS_PROC_PRINCIPAL_OK").sum()
                     n_tuss_rec        = tuss_col.isin({
                         "OK_TUSS_PROC_ADICIONAL_RECONHECIDO",

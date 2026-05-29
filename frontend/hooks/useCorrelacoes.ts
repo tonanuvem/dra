@@ -152,9 +152,10 @@ export function useDashboardStats() {
 
         // StatusTUSS que geram recuperação financeira ativa (mesmos da aba Faturamento)
         const RECOVERY_TUSS = new Set([
-          'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
-          'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE',
-          'TUSS_NAO_FATURADO_MAPEADO',
+          'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
+          'COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE',
+          'COBRAR_TUSS_NAO_FATURADO_MAPEADO',
+          'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE',
         ])
 
         for (const row of allRows) {
@@ -177,8 +178,9 @@ export function useDashboardStats() {
             const estimado = Number(row.ValorEstimado_TUSS ?? 0)
             const recebido = Number(row.ValorLiberado_REPASSE ?? 0)
             let gap: number
-            if (row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES') {
-              // Cobrado como simples: recuperável = diferença (pode ser negativa — ignora)
+            if (row.StatusTUSS === 'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES' ||
+              row.StatusTUSS === 'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE') {
+              // Cobrado como simples / downgrade: recuperável = diferença (pode ser negativa — ignora)
               gap = Math.max(0, estimado - recebido)
             } else {
               // Ausente + Não Faturado: recuperável = valor estimado inteiro
@@ -187,10 +189,10 @@ export function useDashboardStats() {
             valorRecuperar += gap
           }
 
-          // ── Filas TUSS: apenas NAO_FATURADO_NO_REPASSE + TUSS_NAO_FATURADO_MAPEADO sem valor
+          // ── Filas TUSS: apenas NAO_FATURADO_NO_REPASSE + COBRAR_TUSS_NAO_FATURADO_MAPEADO sem valor
           const isNaoFaturadoMapeado =
             row.StatusCorrelacao === 'NAO_FATURADO_NO_REPASSE' &&
-            row.StatusTUSS       === 'TUSS_NAO_FATURADO_MAPEADO' &&
+            row.StatusTUSS       === 'COBRAR_TUSS_NAO_FATURADO_MAPEADO' &&
             row.ValorEstimado_TUSS == null
 
           if (isNaoFaturadoMapeado) {
@@ -252,6 +254,6 @@ function needsReview(row: { StatusCorrelacao?: string; MetodoMatch?: string; Sta
     m.startsWith('2_FALLBACK_NR-ATENDIMENTO') ||
     m.startsWith('3_FALLBACK_NOME_PARCIAL') ||
     m.startsWith('4_FALLBACK_NOME_COMPLETO') ||
-    row.StatusTUSS === 'TUSS_COMBINACAO_SEM_MAPEAMENTO'
+    row.StatusTUSS === 'CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO'
   )
 }

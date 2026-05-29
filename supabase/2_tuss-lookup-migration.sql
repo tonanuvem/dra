@@ -46,7 +46,13 @@ COMMENT ON COLUMN public.tuss_lookup_table."TipoCobranca" IS
   'unico_cod_tuss_somente_proc_principal | unico_cod_tuss_inclui_proc_adicional_e_principal | '
   'multiplos_cod_tuss_proced_adicional | sem_mapeamento_tuss';
 COMMENT ON COLUMN public.tuss_lookup_table.codigo_base_proc_principal IS
-  'Código TUSS do procedimento principal isolado (sem adicional). Usado para detectar subcobrança.';
+  'Código TUSS do procedimento principal isolado (sem adicional). '
+  'Quando TipoCobranca = ''unico_cod_tuss_inclui_proc_adicional_e_principal'', '
+  'este campo aponta o código simples do qual CodigosTUSS é um upgrade combinado. '
+  'Usado pelo motor Python (_build_upgrade_map) para classificar '
+  'OK_TUSS_CODIGO_PRINCIPAL_UPGRADE (repasse pagou código mais complexo) vs '
+  'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE (repasse pagou código mais simples) vs '
+  'COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE (relação não determinável).';
 
 CREATE INDEX IF NOT EXISTS tuss_lookup_proc_idx
   ON public.tuss_lookup_table ("Proc_PRODUCAO_raw");

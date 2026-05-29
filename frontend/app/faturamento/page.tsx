@@ -25,25 +25,29 @@ const TAB_CONFIG: Record<TabType, {
   todos: {
     label: '📋 Todos',
     statusTUSS: [
-      'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
-      'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE',
-      'TUSS_NAO_FATURADO_MAPEADO',
+      'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
+      'COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE',
+      'COBRAR_TUSS_NAO_FATURADO_MAPEADO',
+      'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE',
     ],
     description: 'Todos os itens com potencial de recuperação financeira',
   },
   downgrade: {
     label: '🔴 Cobrado Como Simples',
-    statusTUSS: ['TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES'],
-    description: 'Adicional pago com código simples — cobrar diferença',
+    statusTUSS: [
+      'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
+      'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE',
+    ],
+    description: 'Código pago mais simples do que o realizado — cobrar diferença',
   },
   ausente: {
     label: '🟠 Código Adicional Ausente',
-    statusTUSS: ['TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE'],
+    statusTUSS: ['COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE'],
     description: 'Código adicional não faturado separadamente',
   },
   nao_faturado: {
     label: '❌ Não Faturados',
-    statusTUSS: ['TUSS_NAO_FATURADO_MAPEADO'],
+    statusTUSS: ['COBRAR_TUSS_NAO_FATURADO_MAPEADO'],
     description: 'Procedimento inteiro sem pagamento no repasse',
   },
 }
@@ -269,8 +273,9 @@ function RowDetailModal({
             </div>
           </div>
 
-          {/* Fórmula: apenas para "Cobrado Como Simples" (delta) */}
-          {row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES' &&
+          {/* Fórmula: para "Cobrado Como Simples" e "Principal Downgrade" (delta) */}
+          {(row.StatusTUSS === 'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES' ||
+            row.StatusTUSS === 'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE') &&
             valorEstimado != null && (
             <div className="flex items-center gap-1.5 mt-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
               <Info className="w-3 h-3 flex-shrink-0 text-blue-500" />
@@ -639,7 +644,8 @@ function calcularValorRecuperar(row: Correlacao, tab: TabType): number | null {
 
   // Aba "Todos": calcula com base no StatusTUSS de cada linha
   if (tab === 'todos') {
-    if (row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES') {
+    if (row.StatusTUSS === 'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES' ||
+        row.StatusTUSS === 'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE') {
       if (estimado == null) return null
       return estimado - recebido
     }
@@ -655,10 +661,12 @@ function calcularValorRecuperar(row: Correlacao, tab: TabType): number | null {
 }
 
 function buildObservacao(row: Correlacao, tab: TabType): string {
-  if (tab === 'downgrade' || row.StatusTUSS === 'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES') {
+  if (tab === 'downgrade' ||
+      row.StatusTUSS === 'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES' ||
+      row.StatusTUSS === 'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE') {
     return `Faturado como ${row.CodigoTUSS_REPASSE}. Correto conforme TUSS: ${row.CodigosTUSS_Esperados} — ${row.DescricaoTUSS}. Solicita revisão e reprocessamento.`
   }
-  if (tab === 'ausente' || row.StatusTUSS === 'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE') {
+  if (tab === 'ausente' || row.StatusTUSS === 'COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE') {
     return `Código adicional ausente no repasse: ${row.CodigosTUSS_Ausentes}. Procedimento realizado: ${row.ProcedimentosAdicionais_PRODUCAO}.`
   }
   return `Procedimento realizado em ${row.Data_PRODUCAO} não identificado no repasse. Solicita inclusão.`

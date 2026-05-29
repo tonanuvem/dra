@@ -850,7 +850,7 @@ export default function ConfiguracoesPage() {
       const { data: corrRaw } = await supabase
         .from(TABLES.correlacao)
         .select('Procedimento_PRODUCAO, ProcedimentosAdicionais_PRODUCAO')
-        .eq('StatusTUSS', 'TUSS_COMBINACAO_SEM_MAPEAMENTO')
+        .eq('StatusTUSS', 'CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO')
 
       const corrRows = ((corrRaw as unknown) as Array<{
         Procedimento_PRODUCAO: string | null

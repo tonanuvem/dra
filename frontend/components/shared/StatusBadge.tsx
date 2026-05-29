@@ -20,16 +20,21 @@ interface StatusTUSSBadgeProps {
 }
 
 const tussLabels: Record<string, string> = {
-  'TUSS_PROC_PRINCIPAL_OK':                   'Código TUSS Correto',
-  'TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL':   'Adicional Incorporado ao Código Principal',
-  'TUSS_PROC_ADICIONAL_RECONHECIDO':           'Adicional Faturado com Código Correto',
-  'TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS':   'Todos os Adicionais com Código Correto',
-  'TUSS_CODIGO_PRINCIPAL_DIVERGENTE':          'Código do Proc. Principal Diverge do Esperado',
-  'TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES':  'Subcobrança: Adicional Faturado como Simples',
-  'TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE':  'Código Adicional Não Encontrado no Repasse',
-  'TUSS_NAO_FATURADO_MAPEADO':                 'Não Cobrado – Código TUSS Identificado (Recuperável)',
-  'TUSS_REPASSE_SEM_PRODUCAO':                 'Cobrança no Repasse sem Registro de Produção',
-  'TUSS_COMBINACAO_SEM_MAPEAMENTO':            'Combinação de Procedimentos sem Mapeamento TUSS',
+  // OK
+  'OK_TUSS_PROC_PRINCIPAL_OK':                           'Código TUSS Correto',
+  'OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL':          'Adicional Incorporado ao Código Principal',
+  'OK_TUSS_PROC_ADICIONAL_RECONHECIDO':                  'Adicional Faturado com Código Correto',
+  'OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS':          'Todos os Adicionais com Código Correto',
+  'OK_TUSS_CODIGO_PRINCIPAL_UPGRADE':                    'Repasse com Código Superior ao Esperado',
+  // COBRAR
+  'COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE':             'Código do Proc. Principal Diverge do Esperado',
+  'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE':              'Repasse com Código Mais Simples – Cobrar Diferença',
+  'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES':     'Subcobrança: Adicional Faturado como Simples',
+  'COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE':     'Código Adicional Não Encontrado no Repasse',
+  'COBRAR_TUSS_NAO_FATURADO_MAPEADO':                   'Não Cobrado – Código TUSS Identificado (Recuperável)',
+  // CORRELACIONAR_MANUAL
+  'CORRELACIONAR_MANUAL_TUSS_REPASSE_SEM_PRODUCAO':      'Cobrança no Repasse sem Registro de Produção',
+  'CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO': 'Combinação de Procedimentos sem Mapeamento TUSS',
 }
 
 export function StatusTUSSBadge({ status, className }: StatusTUSSBadgeProps) {
