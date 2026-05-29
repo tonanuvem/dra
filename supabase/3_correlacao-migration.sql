@@ -7,7 +7,7 @@
 --  Seções:
 --    1. Extensão pg_trgm
 --    2. CREATE TABLE correlacao_endoscopia
---    3. UNIQUE INDEX parcial (lote_processamento, hash_conteudo) WHERE is_duplicata=false
+--    3. UNIQUE constraint (lote_processamento, hash_conteudo)
 --    4. Índices de performance
 --    5. RLS policies
 --    6. Trigger de enriquecimento no INSERT
@@ -178,19 +178,19 @@ COMMENT ON COLUMN public.correlacao_endoscopia.decisao_humana IS
 
 
 -- ─────────────────────────────────────────────────────────────
--- 3. UNIQUE INDEX PARCIAL
---    Garante unicidade de (lote, hash) apenas para registros
---    canônicos (is_duplicata = false). Permite que duplicatas
---    cross-lote coexistam com o mesmo hash em lotes distintos.
---    Duplicatas intra-lote são silenciadas via ON CONFLICT DO NOTHING.
+-- 3. UNIQUE CONSTRAINT
+--    Garante que dentro de um mesmo lote não há dois registros
+--    com conteúdo idêntico (hash igual). Duplicatas intra-batch
+--    são silenciadas pelo ON CONFLICT DO NOTHING no app.py.
 --
---    O trigger BEFORE INSERT seta is_duplicata antes da checagem
---    do índice, então o fluxo é seguro sem race conditions.
+--    Separação de responsabilidades:
+--      Intra-lote  → este constraint + ON CONFLICT DO NOTHING
+--      Cross-lote  → trigger BEFORE INSERT (is_duplicata, id_original)
 -- ─────────────────────────────────────────────────────────────
 
-CREATE UNIQUE INDEX IF NOT EXISTS correlacao_lote_hash_nodup_uniq
-  ON public.correlacao_endoscopia (lote_processamento, hash_conteudo)
-  WHERE is_duplicata = false;
+ALTER TABLE public.correlacao_endoscopia
+  ADD CONSTRAINT correlacao_lote_hash_uniq
+  UNIQUE (lote_processamento, hash_conteudo);
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -442,10 +442,9 @@ BEGIN
   ) INTO v_table;
 
   SELECT EXISTS (
-    SELECT 1 FROM pg_indexes
-     WHERE schemaname = 'public'
-       AND tablename  = 'correlacao_endoscopia'
-       AND indexname  = 'correlacao_lote_hash_nodup_uniq'
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'correlacao_lote_hash_uniq'
+       AND conrelid = 'public.correlacao_endoscopia'::regclass
   ) INTO v_uniq;
 
   SELECT relrowsecurity
@@ -519,7 +518,7 @@ $$;
 --    5   TUSS                  StatusTUSS, códigos, valores
 --    3   auditoria humana      decisao_humana, revisado_em, notas_revisor
 --
---  UNIQUE INDEX PARCIAL: (lote_processamento, hash_conteudo) WHERE is_duplicata=false
+--  UNIQUE: (lote_processamento, hash_conteudo)
 --    → intra-batch duplicates silenciados via ON CONFLICT DO NOTHING
 --    → cross-lote duplicates detectados pelo trigger
 --    → hash baseado em 8 campos de input bruto (StatusTUSS/MetodoMatch/
