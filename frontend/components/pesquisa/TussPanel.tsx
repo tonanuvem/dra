@@ -2,6 +2,7 @@
 
 import { formatCurrency } from '@/lib/utils'
 import { StatusTUSSBadge } from '@/components/shared/StatusBadge'
+import { AlertTriangle } from 'lucide-react'
 import type { Correlacao } from '@/lib/types'
 
 // Ação recomendada por StatusTUSS — linguagem de negócio
@@ -95,6 +96,24 @@ export function TussPanel({ item, showFinancial = true }: TussPanelProps) {
           </tbody>
         </table>
       </div>
+      {/* Códigos adicionais ausentes no repasse */}
+      {item.CodigosTUSS_Ausentes && (
+        <div className="flex gap-2 px-3 py-2.5 rounded-lg border bg-red-50 border-red-200 text-red-800">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-red-500" />
+          <div className="text-xs leading-snug">
+            <p className="font-semibold mb-1">Código(s) Adicional(is) Ausente(s) no Repasse</p>
+            <p className="text-gray-500 mb-0.5">Código TUSS ausente</p>
+            <p className="font-mono font-bold text-red-700">{item.CodigosTUSS_Ausentes}</p>
+            {item.ProcedimentosAdicionais_PRODUCAO && (
+              <>
+                <p className="text-gray-500 mt-1.5 mb-0.5">Procedimento realizado</p>
+                <p className="text-red-800">{item.ProcedimentosAdicionais_PRODUCAO}</p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useCorrelacoes } from '@/hooks/useCorrelacoes'
-import { SplitView } from '@/components/auditoria/SplitView'
+import { DetailPanel } from '@/components/pesquisa/DetailPanel'
 import { StatusCorrelacaoBadge } from '@/components/shared/StatusBadge'
 import { SimilarityScore } from '@/components/shared/SimilarityScore'
 import { formatDate, getRiskLevel, needsHumanReview } from '@/lib/utils'
@@ -181,14 +181,18 @@ function AuditoriaContent() {
             </div>
           </div>
 
-          {/* Split View */}
+          {/* Detail Panel */}
           <div className="xl:col-span-2">
             {selectedIndex !== null ? (
-              <SplitView
+              <DetailPanel
                 items={enrichedData}
                 currentIndex={selectedIndex}
                 onNavigate={setSelectedIndex}
                 onDecision={handleDecision}
+                onSelectRelated={r => {
+                  const idx = enrichedData.findIndex(x => x.ChaveCorrelacao === r.ChaveCorrelacao)
+                  if (idx !== -1) setSelectedIndex(idx)
+                }}
               />
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 flex items-center justify-center h-full min-h-64">

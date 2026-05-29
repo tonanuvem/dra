@@ -202,13 +202,31 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
             diverge={item.Data_PRODUCAO !== item.Data_REPASSE}
             icon={Calendar}
           />
-          <FieldRow
-            label="Procedimento"
-            left={item.Procedimento_PRODUCAO}
-            right={item.Procedimento_REPASSE}
-            diverge={procedureDiverge}
-            icon={FileText}
-          />
+          {/* Procedimento + Adicional (esq) mesclado com Procedimento Repasse (dir) */}
+          <div className={`grid grid-cols-2 gap-1 border-b border-gray-100 ${procedureDiverge ? 'bg-red-50 -mx-4 px-4 rounded' : ''}`}>
+            <div className="flex flex-col py-2.5 gap-2">
+              <div>
+                <p className="text-xs text-gray-400 flex items-center gap-1">
+                  <FileText className="w-3 h-3" />
+                  Procedimento
+                </p>
+                <p className={`text-sm font-medium mt-0.5 ${procedureDiverge ? 'text-red-700 font-bold' : 'text-gray-900'}`}>
+                  {item.Procedimento_PRODUCAO || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400">Adicional (Produção)</p>
+                <p className="text-sm text-gray-700">{item.ProcedimentosAdicionais_PRODUCAO || '—'}</p>
+              </div>
+            </div>
+            <div className="py-2.5 flex flex-col justify-center">
+              <p className="text-xs text-gray-400">Procedimento (Repasse)</p>
+              <p className={`text-sm font-medium mt-0.5 ${procedureDiverge ? 'text-red-700 font-bold' : 'text-gray-900'}`}>
+                {item.Procedimento_REPASSE || '—'}
+              </p>
+            </div>
+          </div>
+
           <FieldRow
             label="Convênio"
             left={item.Convenio_PRODUCAO}
@@ -224,8 +242,13 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
 
           <div className="grid grid-cols-2 gap-1 py-2.5 mt-1">
             <div>
-              <p className="text-xs text-gray-400">Adicional (Produção)</p>
-              <p className="text-sm text-gray-700">{item.ProcedimentosAdicionais_PRODUCAO || '—'}</p>
+              {item.CodigosTUSS_Esperados ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs">
+                  <p className="font-semibold text-blue-800 mb-0.5">Código TUSS Esperado</p>
+                  <p className="font-mono text-blue-700">{item.CodigosTUSS_Esperados}</p>
+                  {item.DescricaoTUSS && <p className="text-blue-600 mt-0.5">{item.DescricaoTUSS}</p>}
+                </div>
+              ) : null}
             </div>
             <div>
               <p className="text-xs text-gray-400">Código TUSS (Repasse)</p>
@@ -262,13 +285,6 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
             />
           </div>
 
-          {item.CodigosTUSS_Esperados && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs">
-              <p className="font-semibold text-blue-800 mb-1">Código TUSS Esperado</p>
-              <p className="font-mono text-blue-700">{item.CodigosTUSS_Esperados}</p>
-              {item.DescricaoTUSS && <p className="text-blue-600 mt-0.5">{item.DescricaoTUSS}</p>}
-            </div>
-          )}
         </div>
       </div>
     </div>
