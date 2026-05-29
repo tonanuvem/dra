@@ -145,8 +145,7 @@ export function StatusChart({ data, showFinancial = true, mode = 'correlacao', v
       </div>
 
       {/* ── Legenda customizada ───────────────────────── */}
-      {/* TUSS: 3 itens → 1 coluna para texto não quebrar. Correlação: 2 colunas em sm+ */}
-      <div className={`grid gap-x-5 gap-y-3 ${isTUSS ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
+      <div className="grid grid-cols-1 gap-y-3">
         {chartData.map((entry, i) => (
           <div key={i} className="flex items-start gap-2 min-w-0">
             {/* Bolinha colorida */}
