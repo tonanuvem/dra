@@ -22,6 +22,14 @@ const TUSS_LABELS: Record<string, string> = {
   TUSS_MANUAL: 'Análise Manual Necessária',
 }
 
+// Labels do gráfico de Correlação alinhados com os títulos/subtítulos da Seção 1 do Dashboard
+const CORRELACAO_CHART_LABELS: Record<string, { name: string; description?: string }> = {
+  CORRELACIONADO:                        { name: 'Registros Correlacionados na Produção e Repasse', description: 'Identificados e conferidos nos dois sistemas' },
+  NAO_FATURADO_NO_REPASSE:               { name: 'Não Faturado no Repasse' },
+  REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO:  { name: 'Pago sem Registro na Produção', description: 'Pago pelo Hospital — ausente na produção' },
+  REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO: { name: 'Cobrança Fora do Período' },
+}
+
 const FALLBACK_PALETTE = ['#94a3b8', '#cbd5e1', '#bae6fd', '#fde68a', '#bbf7d0']
 
 function fmtBRL(value: number): string {
@@ -32,26 +40,32 @@ interface StatusChartProps {
   data: { status: string; total: number; valor: number; valorPago: number }[]
   showFinancial?: boolean
   mode?: 'correlacao' | 'tuss'
+  /** Estimativa de Valor a Recuperar — exibida no cabeçalho do gráfico TUSS (só financeiro/admin) */
+  valorRecuperar?: number
 }
 
-export function StatusChart({ data, showFinancial = true, mode = 'correlacao' }: StatusChartProps) {
+export function StatusChart({ data, showFinancial = true, mode = 'correlacao', valorRecuperar }: StatusChartProps) {
   const isTUSS = mode === 'tuss'
   const totalRegistros = data.reduce((s, d) => s + d.total, 0)
   const totalValorPago = data.reduce((s, d) => s + d.valorPago, 0)
 
-  const chartData = data.map((d, i) => ({
-    raw:       d.status,
-    name:      isTUSS
-                 ? (TUSS_LABELS[d.status] ?? d.status)
-                 : (getStatusCorrelacaoLabel(d.status as any) ?? d.status),
-    value:     d.total,
-    valorPago: d.valorPago,
-    pctReg:    totalRegistros > 0 ? ((d.total     / totalRegistros) * 100).toFixed(1) : '0.0',
-    pctValor:  totalValorPago > 0 ? ((d.valorPago / totalValorPago) * 100).toFixed(1) : '0.0',
-    color:     isTUSS
-                 ? (TUSS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length])
-                 : (STATUS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length]),
-  }))
+  const chartData = data.map((d, i) => {
+    const corrLabel = CORRELACAO_CHART_LABELS[d.status]
+    return {
+      raw:         d.status,
+      name:        isTUSS
+                     ? (TUSS_LABELS[d.status] ?? d.status)
+                     : (corrLabel?.name ?? getStatusCorrelacaoLabel(d.status as any) ?? d.status),
+      description: isTUSS ? undefined : corrLabel?.description,
+      value:       d.total,
+      valorPago:   d.valorPago,
+      pctReg:      totalRegistros > 0 ? ((d.total     / totalRegistros) * 100).toFixed(1) : '0.0',
+      pctValor:    totalValorPago > 0 ? ((d.valorPago / totalValorPago) * 100).toFixed(1) : '0.0',
+      color:       isTUSS
+                     ? (TUSS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length])
+                     : (STATUS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length]),
+    }
+  })
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-5">
@@ -61,10 +75,18 @@ export function StatusChart({ data, showFinancial = true, mode = 'correlacao' }:
         <h3 className="text-sm font-semibold text-gray-700">
           {isTUSS ? 'Verificação TUSS do Repasse' : 'Distribuição por Status de Correlação'}
         </h3>
-        {showFinancial && totalValorPago > 0 && (
+        {/* Correlação: total já repassado */}
+        {!isTUSS && showFinancial && totalValorPago > 0 && (
           <div className="text-right flex-shrink-0">
-            <p className="text-[10px] text-gray-400 leading-tight">Total pago no repasse</p>
+            <p className="text-[10px] text-gray-400 leading-tight">Total já repassado pelo Hospital</p>
             <p className="text-sm font-bold text-emerald-700 tabular-nums">{fmtBRL(totalValorPago)}</p>
+          </div>
+        )}
+        {/* TUSS: estimativa de recuperação financeira */}
+        {isTUSS && valorRecuperar != null && valorRecuperar > 0 && (
+          <div className="text-right flex-shrink-0">
+            <p className="text-[10px] text-gray-400 leading-tight">Estimativa de Valor a Recuperar</p>
+            <p className="text-sm font-bold text-emerald-700 tabular-nums">{fmtBRL(valorRecuperar)}</p>
           </div>
         )}
       </div>
@@ -123,7 +145,8 @@ export function StatusChart({ data, showFinancial = true, mode = 'correlacao' }:
       </div>
 
       {/* ── Legenda customizada ───────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3">
+      {/* TUSS: 3 itens → 1 coluna para texto não quebrar. Correlação: 2 colunas em sm+ */}
+      <div className={`grid gap-x-5 gap-y-3 ${isTUSS ? 'grid-cols-1' : 'grid-cols-1 sm:grid-cols-2'}`}>
         {chartData.map((entry, i) => (
           <div key={i} className="flex items-start gap-2 min-w-0">
             {/* Bolinha colorida */}
@@ -141,6 +164,11 @@ export function StatusChart({ data, showFinancial = true, mode = 'correlacao' }:
                   <span className="font-normal text-gray-400 ml-0.5">({entry.pctReg}%)</span>
                 </span>
               </div>
+
+              {/* Linha 1b: descrição (quando disponível — modo Correlação) */}
+              {entry.description && (
+                <p className="text-[10px] text-gray-400 leading-snug mt-0.5">{entry.description}</p>
+              )}
 
               {/* Linha 2: valor financeiro (só para financeiro/admin) */}
               {showFinancial && (

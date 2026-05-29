@@ -90,7 +90,7 @@ export default function DashboardPage() {
       {/* ── SEÇÃO 2: Verificação TUSS do Repasse ─────────────────────────── */}
       <div className="flex flex-col gap-3">
         <h3 className="text-xs sm:text-sm font-semibold text-gray-600">Verificação TUSS do Repasse</h3>
-        <div className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${canFinancial ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-3">
           <KpiCard
             title="Código TUSS Pago e Conferido"
             value={loading ? '—' : stats.tussOk.toLocaleString('pt-BR')}
@@ -128,17 +128,6 @@ export default function DashboardPage() {
             color="yellow"
             loading={loading}
           />
-          {canFinancial && (
-            <KpiCard
-              title="Valor a Recuperar"
-              value={loading ? '—' : formatCurrency(stats.valorRecuperar)}
-              subtitle="Estimativa via tabela TUSS"
-              icon={DollarSign}
-              color="blue"
-              href="/faturamento"
-              loading={loading}
-            />
-          )}
         </div>
       </div>
 
@@ -159,7 +148,12 @@ export default function DashboardPage() {
         ) : (
           <>
             <StatusChart data={stats.statusDistribution} showFinancial={canFinancial} />
-            <StatusChart data={stats.tussStatusDistribution} mode="tuss" showFinancial={false} />
+            <StatusChart
+              data={stats.tussStatusDistribution}
+              mode="tuss"
+              showFinancial={false}
+              valorRecuperar={canFinancial ? stats.valorRecuperar : undefined}
+            />
           </>
         )}
       </div>
