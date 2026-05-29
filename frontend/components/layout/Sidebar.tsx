@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ClipboardCheck, FileText,
-  Settings, Stethoscope, Menu, X, LogOut, ChevronDown, Layers,
+  Settings, Stethoscope, Menu, X, LogOut, ChevronDown, Layers, Search,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { ROLE_LABELS, ROLE_COLORS } from '@/lib/permissions'
@@ -13,6 +13,7 @@ import { ROLE_LABELS, ROLE_COLORS } from '@/lib/permissions'
 // ── Itens de navegação com permissão necessária ───────────────
 const navItems = [
   { href: '/dashboard',      label: 'Dashboard',      icon: LayoutDashboard, permission: null               },
+  { href: '/pesquisa',       label: 'Pesquisa',       icon: Search,          permission: null               },
   { href: '/carregamentos',  label: 'Carregamentos',  icon: Layers,          permission: null               },
   { href: '/auditoria',      label: 'Auditoria',      icon: ClipboardCheck,  permission: null               },
   { href: '/faturamento',    label: 'Faturamento',    icon: FileText,        permission: 'canViewFinancial' },

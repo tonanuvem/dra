@@ -15,6 +15,12 @@ export interface CorrelacoesFilter {
   metodoMatch?: MetodoMatch[]
   pendentesRevisao?: boolean
   search?: string
+  /** Busca pelo Nr. Atendimento (PRODUCAO e REPASSE) — usado na página Pesquisa */
+  searchNrAtendimento?: string
+  /** Busca pelo Procedimento (PRODUCAO e REPASSE) — usado na página Pesquisa */
+  searchProcedimento?: string
+  /** Busca pela Data de Produção exata (formato DD/MM/YYYY ou YYYY-MM-DD) */
+  searchData?: string
   limit?: number
   offset?: number
   /**
@@ -37,6 +43,19 @@ function applyFilters(q: any, filter: CorrelacoesFilter): any {
     q = q.or(
       `Paciente_PRODUCAO.ilike.%${filter.search}%,Paciente_REPASSE.ilike.%${filter.search}%`
     )
+  }
+  if (filter.searchNrAtendimento) {
+    q = q.or(
+      `NrAtendimento_PRODUCAO.ilike.%${filter.searchNrAtendimento}%,NrAtendimento_REPASSE.ilike.%${filter.searchNrAtendimento}%`
+    )
+  }
+  if (filter.searchProcedimento) {
+    q = q.or(
+      `Procedimento_PRODUCAO.ilike.%${filter.searchProcedimento}%,Procedimento_REPASSE.ilike.%${filter.searchProcedimento}%`
+    )
+  }
+  if (filter.searchData) {
+    q = q.eq('Data_PRODUCAO', filter.searchData)
   }
   return q
 }
