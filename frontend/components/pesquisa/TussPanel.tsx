@@ -28,18 +28,11 @@ const COR_BG: Record<string, string> = {
   yellow: 'bg-yellow-50 border-yellow-200 text-yellow-800',
 }
 
-// Tipo de cobrança inferido pelo StatusTUSS
-const TIPO_COBRANCA: Record<string, { label: string; badge: string }> = {
-  OK_TUSS_PROC_PRINCIPAL_OK:                           { label: 'Único — só principal',    badge: 'bg-gray-100 text-gray-600'   },
-  OK_TUSS_CODIGO_PRINCIPAL_UPGRADE:                    { label: 'Único — só principal',    badge: 'bg-gray-100 text-gray-600'   },
-  COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE:              { label: 'Único — só principal',    badge: 'bg-gray-100 text-gray-600'   },
-  COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE:             { label: 'Único — só principal',    badge: 'bg-gray-100 text-gray-600'   },
-  COBRAR_TUSS_NAO_FATURADO_MAPEADO:                    { label: 'Único — só principal',    badge: 'bg-gray-100 text-gray-600'   },
-  OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL:          { label: 'Único — c/ adicional',    badge: 'bg-blue-100 text-blue-700'   },
-  COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES:     { label: 'Múltiplos códigos',       badge: 'bg-purple-100 text-purple-700' },
-  OK_TUSS_PROC_ADICIONAL_RECONHECIDO:                  { label: 'Múltiplos códigos',       badge: 'bg-purple-100 text-purple-700' },
-  OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS:          { label: 'Múltiplos códigos',       badge: 'bg-purple-100 text-purple-700' },
-  COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE:     { label: 'Múltiplos códigos',       badge: 'bg-purple-100 text-purple-700' },
+// Tipo de cobrança — valor real vindo da view correlacao_endoscopia_com_tipo
+const TIPO_COBRANCA_LABEL: Record<string, { label: string; badge: string }> = {
+  'unico_cod_tuss_somente_proc_principal':            { label: 'Único — só principal',  badge: 'bg-gray-100 text-gray-600'     },
+  'unico_cod_tuss_inclui_proc_adicional_e_principal': { label: 'Único — c/ adicional',  badge: 'bg-blue-100 text-blue-700'    },
+  'multiplos_cod_tuss_proced_adicional':              { label: 'Múltiplos códigos',     badge: 'bg-purple-100 text-purple-700' },
 }
 
 interface TussPanelProps {
@@ -49,7 +42,7 @@ interface TussPanelProps {
 
 export function TussPanel({ item, showFinancial = true }: TussPanelProps) {
   const acao = item.StatusTUSS ? TUSS_ACAO[item.StatusTUSS] : null
-  const tipo = item.StatusTUSS ? TIPO_COBRANCA[item.StatusTUSS] ?? null : null
+  const tipo = item.TipoCobranca ? TIPO_COBRANCA_LABEL[item.TipoCobranca] ?? null : null
 
   const codigoEsperado = item.CodigosTUSS_Esperados || '—'
   const codigoPago     = item.CodigoTUSS_REPASSE     || '—'

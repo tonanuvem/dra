@@ -2,7 +2,7 @@
 // Change values in .env (or docker-compose environment:) without touching source.
 
 export const TABLES = {
-  correlacao: process.env.NEXT_PUBLIC_TABLE_CORRELACAO ?? 'correlacao_endoscopia',
+  correlacao: process.env.NEXT_PUBLIC_TABLE_CORRELACAO ?? 'correlacao_endoscopia_com_tipo',
   tussLookup: process.env.NEXT_PUBLIC_TABLE_TUSS_LOOKUP ?? 'tuss_lookup_table',
 } as const
 

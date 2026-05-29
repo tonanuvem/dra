@@ -100,6 +100,7 @@ export interface Correlacao {
   CodigosTUSS_Esperados: string | null
   DescricaoTUSS: string | null
   CodigosTUSS_Ausentes: string | null
+  TipoCobranca: string | null
   ValorEstimado_TUSS: number | null
   decisao_humana: DecisaoHumana
   revisado_em: string | null

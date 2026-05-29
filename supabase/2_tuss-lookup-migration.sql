@@ -290,6 +290,71 @@ $$;
 
 
 -- ============================================================
+--  5. VIEW: correlacao_endoscopia_com_tipo
+-- ============================================================
+--  Expõe todos os campos de correlacao_endoscopia enriquecidos
+--  com TipoCobranca da tuss_lookup_table, via JOIN pela chave
+--  normalizada (mesma lógica de _normalizar_chave_tuss no Python:
+--  strip → upper → remove acentos → colapsa separadores).
+--
+--  Idempotente: CREATE OR REPLACE não requer DROP prévio.
+-- ─────────────────────────────────────────────────────────────
+
+-- Extensão necessária para remover acentos (nativa no Supabase/Postgres)
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+CREATE OR REPLACE VIEW public.correlacao_endoscopia_com_tipo AS
+SELECT
+  c.*,
+  t."TipoCobranca"
+FROM public.correlacao_endoscopia c
+LEFT JOIN public.tuss_lookup_table t
+  ON t.chave_norm = (
+    -- Replica _normalizar_chave_tuss(Procedimento_PRODUCAO + '_' + ProcedimentosAdicionais_PRODUCAO)
+    -- 1. Concatena proc + '_' + adicional (ou só proc + '_' se adicional for nulo)
+    -- 2. Strip + Upper
+    -- 3. Remove acentos via unaccent (extensão nativa do Supabase/Postgres)
+    -- 4. Colapsa separadores +/;, → '+'  e espaços ao redor do '+'
+    -- 5. Colapsa múltiplos espaços
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(
+          upper(trim(
+            unaccent(
+              coalesce(c."Procedimento_PRODUCAO", '') ||
+              '_' ||
+              coalesce(c."ProcedimentosAdicionais_PRODUCAO", '')
+            )
+          )),
+          '[+/;,]+', '+', 'g'          -- colapsa separadores → '+'
+        ),
+        '\s*\+\s*', '+', 'g'           -- remove espaços ao redor do '+'
+      ),
+      '\s+', ' ', 'g'                  -- colapsa múltiplos espaços
+    )
+  );
+
+-- RLS: a view herda as políticas das tabelas subjacentes.
+-- Concede leitura para usuários autenticados (mesma política da tabela base).
+GRANT SELECT ON public.correlacao_endoscopia_com_tipo TO authenticated;
+
+-- Verificação
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.views
+    WHERE table_schema = 'public'
+      AND table_name   = 'correlacao_endoscopia_com_tipo'
+  ) THEN
+    RAISE NOTICE 'View correlacao_endoscopia_com_tipo ... OK ✓';
+  ELSE
+    RAISE WARNING 'View correlacao_endoscopia_com_tipo NÃO foi criada! ✗';
+  END IF;
+END;
+$$;
+
+
+-- ============================================================
 --  PÓS-INSTALAÇÃO
 -- ============================================================
 --
