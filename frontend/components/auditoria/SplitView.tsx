@@ -242,13 +242,9 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
 
           <div className="grid grid-cols-2 gap-1 py-2.5 mt-1">
             <div>
-              {item.CodigosTUSS_Esperados ? (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 text-xs">
-                  <p className="font-semibold text-blue-800 mb-0.5">Código TUSS Esperado</p>
-                  <p className="font-mono text-blue-700">{item.CodigosTUSS_Esperados}</p>
-                  {item.DescricaoTUSS && <p className="text-blue-600 mt-0.5">{item.DescricaoTUSS}</p>}
-                </div>
-              ) : null}
+              <p className="text-xs text-gray-400">Código TUSS Esperado</p>
+              <p className="text-sm font-mono text-gray-900">{item.CodigosTUSS_Esperados || '—'}</p>
+              {item.DescricaoTUSS && <p className="text-xs text-gray-500">{item.DescricaoTUSS}</p>}
             </div>
             <div>
               <p className="text-xs text-gray-400">Código TUSS (Repasse)</p>
