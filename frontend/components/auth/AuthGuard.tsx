@@ -4,7 +4,6 @@ import { useEffect, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { supabase } from '@/lib/supabase'
 import { PROTECTED_ROUTES } from '@/lib/permissions'
 import type { Permissions } from '@/lib/permissions'
 
@@ -38,9 +37,11 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Autenticado mas profile não carregou (ex: apikey inválida → 401) → limpa sessão
+    // Autenticado mas profile não carregou → redireciona para login.
+    // Não faz signOut aqui: o profile pode ser null por race condition transitório
+    // (ex: AuthContext ainda buscando após SIGNED_IN). O signOut agressivo causava
+    // logout involuntário logo após um login bem-sucedido.
     if (user && !profile) {
-      supabase.auth.signOut()
       router.replace('/login')
       return
     }

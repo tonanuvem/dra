@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Stethoscope, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
@@ -25,7 +25,6 @@ function isCpf(input: string): boolean {
 // ── Formulário de login ───────────────────────────────────────
 
 function LoginForm() {
-  const router       = useRouter()
   const searchParams = useSearchParams()
   const erroParam    = searchParams.get('erro')
 
@@ -77,8 +76,9 @@ function LoginForm() {
         return
       }
 
-      // AuthContext detecta a sessão e AuthGuard redireciona para /dashboard
-      router.replace('/dashboard')
+      // Não navega aqui — o onAuthStateChange dispara SIGNED_IN, o AuthContext
+      // busca o profile e só então o AuthGuard redireciona para /dashboard.
+      // Navegar antes causaria race condition: profile=null quando AuthGuard monta.
     } catch {
       setErro('Erro inesperado. Tente novamente.')
       setLoading(false)

@@ -2907,9 +2907,9 @@ def _enriquecer_com_valores_tuss(
         df["DescricaoTUSS"] = ""
 
     _STATUS_COM_VALOR = {
-        "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES",
-        "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE",
-        "TUSS_CODIGO_PRINCIPAL_DIVERGENTE",
+        "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES",
+        "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE",
+        "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE",
     }
 
     vals:  list = [""] * len(df)
@@ -2992,18 +2992,18 @@ def verificar_tuss_adicionais(
                 codigos_raw_a = str(entry_a.get("CodigosTUSS", ""))
                 codigos_a     = [c.strip() for c in codigos_raw_a.split(",") if c.strip() and c.strip() != "nan"]
                 desc_a        = str(entry_a.get("Descricao_REPASSE", "")).strip()
-                linha["StatusTUSS"]          = "TUSS_NAO_FATURADO_MAPEADO"
+                linha["StatusTUSS"]          = "COBRAR_TUSS_NAO_FATURADO_MAPEADO"
                 linha["CodigosTUSS_Esperados"] = ", ".join(codigos_a)
                 if desc_a:
                     linha["DescricaoTUSS"] = desc_a
             else:
-                linha["StatusTUSS"] = "TUSS_COMBINACAO_SEM_MAPEAMENTO"
+                linha["StatusTUSS"] = "CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO"
             continue
 
         # Branch B: repasse sem produção correspondente — registrar o código do repasse
         if status in ("REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO", "REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO"):
             cod_rep_b = str(linha.get("CodigoTUSS_REPASSE", "")).replace(".0", "").strip()
-            linha["StatusTUSS"] = "TUSS_REPASSE_SEM_PRODUCAO"
+            linha["StatusTUSS"] = "CORRELACIONAR_MANUAL_TUSS_REPASSE_SEM_PRODUCAO"
             if cod_rep_b and cod_rep_b != "nan":
                 linha["CodigosTUSS_Esperados"] = cod_rep_b
             continue
@@ -3021,7 +3021,7 @@ def verificar_tuss_adicionais(
         # O código já está presente no repasse; apenas registrar como reconhecido.
         if sem_pa and sem_princ:
             if linha.get("MetodoMatch") == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL":
-                linha["StatusTUSS"] = "TUSS_PROC_ADICIONAL_RECONHECIDO"
+                linha["StatusTUSS"] = "OK_TUSS_PROC_ADICIONAL_RECONHECIDO"
             continue
 
         # Monta chave: com PA → "PROC_PA", sem PA → "PROC_"
@@ -3031,7 +3031,7 @@ def verificar_tuss_adicionais(
         entry = tabela_tuss.get(chave)
 
         if not entry:
-            linha["StatusTUSS"] = "TUSS_COMBINACAO_SEM_MAPEAMENTO"
+            linha["StatusTUSS"] = "CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO"
             continue
 
         tipo       = str(entry.get("TipoCobranca", ""))
@@ -3041,7 +3041,7 @@ def verificar_tuss_adicionais(
         desc       = str(entry.get("Descricao_REPASSE", "")).strip()
 
         if tipo == "sem_mapeamento_tuss":
-            linha["StatusTUSS"] = "TUSS_COMBINACAO_SEM_MAPEAMENTO"
+            linha["StatusTUSS"] = "CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO"
             if desc:
                 linha["DescricaoTUSS"] = desc
             continue
@@ -3051,9 +3051,9 @@ def verificar_tuss_adicionais(
             cod_repasse = str(linha.get("CodigoTUSS_REPASSE", "")).replace(".0", "").strip()
             esperado    = codigos[0] if codigos else ""
             linha["StatusTUSS"] = (
-                "TUSS_PROC_PRINCIPAL_OK"
+                "OK_TUSS_PROC_PRINCIPAL_OK"
                 if esperado and cod_repasse == esperado
-                else "TUSS_CODIGO_PRINCIPAL_DIVERGENTE"
+                else "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE"
             )
             if esperado:
                 linha["CodigosTUSS_Esperados"] = esperado
@@ -3063,7 +3063,7 @@ def verificar_tuss_adicionais(
 
         # PA com código igual ao do proc principal (adicional incorporado)
         if tipo == "unico_cod_tuss_somente_proc_principal":
-            linha["StatusTUSS"] = "TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL"
+            linha["StatusTUSS"] = "OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL"
             if codigos:
                 linha["CodigosTUSS_Esperados"] = codigos[0]
             if desc:
@@ -3074,9 +3074,9 @@ def verificar_tuss_adicionais(
 
         if tipo == "unico_cod_tuss_inclui_proc_adicional_e_principal":
             if codigos and cod_repasse == codigos[0]:
-                linha["StatusTUSS"] = "TUSS_PROC_ADICIONAL_RECONHECIDO"
+                linha["StatusTUSS"] = "OK_TUSS_PROC_ADICIONAL_RECONHECIDO"
             else:
-                linha["StatusTUSS"] = "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES"
+                linha["StatusTUSS"] = "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES"
             linha["CodigosTUSS_Esperados"] = codigos[0] if codigos else ""
             if desc:
                 linha["DescricaoTUSS"] = desc
@@ -3102,9 +3102,9 @@ def verificar_tuss_adicionais(
             (encontrados if achou else ausentes).append(cod)
 
         if not ausentes:
-            linha["StatusTUSS"] = "TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS"
+            linha["StatusTUSS"] = "OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS"
         else:
-            linha["StatusTUSS"] = "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE"
+            linha["StatusTUSS"] = "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE"
 
         linha["CodigosTUSS_Esperados"] = ", ".join(codigos_adicionais)
         if ausentes:
@@ -3744,16 +3744,16 @@ LABEL_STATUS_CORR: dict[str, str] = {
 }
 
 LABEL_STATUS_TUSS: dict[str, str] = {
-    "TUSS_PROC_PRINCIPAL_OK":                    "Código TUSS Correto",
-    "TUSS_PROC_ADICIONAL_RECONHECIDO":           "Adicional Faturado com Código Correto",
-    "TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS":   "Todos os Adicionais com Código Correto",
-    "TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL":   "Adicional Incorporado ao Código Principal",
-    "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES":  "Subcobrança: Adicional Faturado como Simples",
-    "TUSS_CODIGO_PRINCIPAL_DIVERGENTE":          "Código do Proc. Principal Diverge do Esperado",
-    "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE":  "Código Adicional Não Encontrado no Repasse",
-    "TUSS_NAO_FATURADO_MAPEADO":                 "Não Cobrado – Código TUSS Identificado (Recuperável)",
-    "TUSS_REPASSE_SEM_PRODUCAO":                 "Cobrança no Repasse sem Registro de Produção",
-    "TUSS_COMBINACAO_SEM_MAPEAMENTO":            "Combinação de Procedimentos sem Mapeamento TUSS",
+    "OK_TUSS_PROC_PRINCIPAL_OK":                           "Código TUSS Correto",
+    "OK_TUSS_PROC_ADICIONAL_RECONHECIDO":                  "Adicional Faturado com Código Correto",
+    "OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS":          "Todos os Adicionais com Código Correto",
+    "OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL":          "Adicional Incorporado ao Código Principal",
+    "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES":     "Subcobrança: Adicional Faturado como Simples",
+    "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE":             "Código do Proc. Principal Diverge do Esperado",
+    "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE":     "Código Adicional Não Encontrado no Repasse",
+    "COBRAR_TUSS_NAO_FATURADO_MAPEADO":                   "Não Cobrado – Código TUSS Identificado (Recuperável)",
+    "CORRELACIONAR_MANUAL_TUSS_REPASSE_SEM_PRODUCAO":      "Cobrança no Repasse sem Registro de Produção",
+    "CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO": "Combinação de Procedimentos sem Mapeamento TUSS",
 }
 
 # Mapeamento inverso: label amigável → valor bruto (usado nos filtros multiselect)
@@ -4960,15 +4960,15 @@ def main():
 
                     # ── Linha 1b: TUSS (se disponível) ───────────────────────
                     tuss_col = df_final.get("StatusTUSS", pd.Series(dtype=str)).fillna("")
-                    n_tuss_downgrade  = (tuss_col.str.upper() == "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES").sum()
-                    n_tuss_ausente    = (tuss_col.str.upper() == "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE").sum()
-                    n_tuss_princ_div  = (tuss_col.str.upper() == "TUSS_CODIGO_PRINCIPAL_DIVERGENTE").sum()
-                    n_tuss_ok         = (tuss_col.str.upper() == "TUSS_PROC_PRINCIPAL_OK").sum()
-                    n_tuss_rec        = (tuss_col.str.upper().isin({
-                        "TUSS_PROC_ADICIONAL_RECONHECIDO",
-                        "TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS",
-                        "TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL",
-                    })).sum()
+                    n_tuss_downgrade  = (tuss_col == "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES").sum()
+                    n_tuss_ausente    = (tuss_col == "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE").sum()
+                    n_tuss_princ_div  = (tuss_col == "COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE").sum()
+                    n_tuss_ok         = (tuss_col == "OK_TUSS_PROC_PRINCIPAL_OK").sum()
+                    n_tuss_rec        = tuss_col.isin({
+                        "OK_TUSS_PROC_ADICIONAL_RECONHECIDO",
+                        "OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS",
+                        "OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL",
+                    }).sum()
                     n_tuss_alertas = n_tuss_downgrade + n_tuss_ausente + n_tuss_princ_div
                     if n_tuss_alertas + n_tuss_ok + n_tuss_rec > 0:
                         st.markdown("#### STATUS TUSS: Verificação de Repasse com base no código TUSS dos procedimentos")
@@ -5149,7 +5149,7 @@ def main():
                         _empty = pd.Series("", index=df.index, dtype=str)
                         _st  = (df["StatusCorrelacao"].fillna("").str.upper()
                                 if "StatusCorrelacao" in df.columns else _empty)
-                        _tss = (df["StatusTUSS"].fillna("").str.upper()
+                        _tss = (df["StatusTUSS"].fillna("")
                                 if "StatusTUSS" in df.columns else _empty)
                         _mm  = (df["MetodoMatch"].fillna("").str.upper()
                                 if "MetodoMatch" in df.columns else _empty)
@@ -5163,17 +5163,10 @@ def main():
                         cor[_mm.str.contains("2_FALLBACK_NR-ATENDIMENTO",na=False)] = "background-color: #cce5ff"
                         cor[_mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL"]    = "background-color: #d4edda"
                         cor[_mm.str.contains("PROCEDIMENTO_DIVERGENTE",  na=False)] = "background-color: #ffc107; color: #000"
-                        # TUSS sobrescreve — máxima prioridade
-                        # Verde: procedimento OK / reconhecido / incorporado
-                        cor[_tss == "TUSS_PROC_PRINCIPAL_OK"]                    = "background-color: #d4edda"
-                        cor[_tss == "TUSS_PROC_ADICIONAL_RECONHECIDO"]           = "background-color: #d4edda"
-                        cor[_tss == "TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS"]   = "background-color: #d4edda"
-                        cor[_tss == "TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL"]   = "background-color: #d4edda"
-                        # Laranja: código ausente no repasse
-                        cor[_tss == "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE"]  = "background-color: #e67e22; color: #fff"
-                        # Vermelho: cobrado errado / código principal divergente
-                        cor[_tss == "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES"]  = "background-color: #c0392b; color: #fff"
-                        cor[_tss == "TUSS_CODIGO_PRINCIPAL_DIVERGENTE"]          = "background-color: #c0392b; color: #fff"
+                        # TUSS sobrescreve — máxima prioridade (colorização por prefixo)
+                        cor[_tss.str.startswith("OK_")]                   = "background-color: #d4edda"
+                        cor[_tss.str.startswith("COBRAR_")]               = "background-color: #c0392b; color: #fff"
+                        cor[_tss.str.startswith("CORRELACIONAR_MANUAL_")] = "background-color: #fff3cd"
                         return pd.DataFrame(
                             _np.repeat(cor.values[:, None], len(df.columns), axis=1),
                             columns=df.columns, index=df.index,
@@ -5699,9 +5692,9 @@ def main():
             st.divider()
             fc3, fc4, fc5 = st.columns(3)
             inc_downgrade   = fc3.checkbox("🔴 Cobrado Como Simples",  value=True, key="cob_dg",
-                help="TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES — convênio usou código menor, ignorando o adicional")
+                help="COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES — convênio usou código menor, ignorando o adicional")
             inc_ausente     = fc4.checkbox("🟠 Código Adicional Ausente", value=True, key="cob_aus",
-                help="TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE — código separado (ex.: Urease) não faturado")
+                help="COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE — código separado (ex.: Urease) não faturado")
             inc_nao_faturado = fc5.checkbox("❌ Procedimento Não Faturado", value=True, key="cob_nf",
                 help="NAO_FATURADO_NO_REPASSE — procedimento inteiro ausente do repasse")
 
@@ -5720,9 +5713,9 @@ def main():
                     _ano_i = int(_ano_r) if pd.notna(_ano_r) else None
                     _mes_i = int(_mes_r) if pd.notna(_mes_r) else None
                     _sc   = str(_row.get("StatusCorrelacao", "")).upper()
-                    _st_t = str(_row.get("StatusTUSS", "")).upper()
+                    _st_t = str(_row.get("StatusTUSS", ""))
 
-                    if inc_downgrade and _st_t == "TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES":
+                    if inc_downgrade and _st_t == "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES":
                         _cod_esp  = str(_row.get("CodigosTUSS_Esperados", "")).strip()
                         _cod_pago = str(_row.get("CodigoTUSS_REPASSE", "")).replace(".0", "").strip()
                         _val, _conf = _valor_estimado(_cod_esp, _cod_pago, "downgrade", convenio=_conv)
@@ -5742,7 +5735,7 @@ def main():
                             "OBSERVACAO": _obs,
                             "VALOR": _val,
                         })
-                    elif inc_ausente and _st_t == "TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE":
+                    elif inc_ausente and _st_t == "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE":
                         _ausentes_str = str(_row.get("CodigosTUSS_Ausentes", _row.get("CodigosTUSS_Esperados", ""))).strip()
                         for _cod_aus in [c.strip() for c in _ausentes_str.split(",") if c.strip()]:
                             _val, _conf = _valor_estimado(_cod_aus, None, "ausente", convenio=_conv)
