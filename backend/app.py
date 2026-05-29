@@ -4958,9 +4958,9 @@ def main():
 
                     if n_proc_divergente > 0:
                         st.warning(
-                            f"🔬 **{int(n_proc_divergente)} correlação(ões) com procedimento divergente** "
+                            f"🔬 **{int(n_proc_divergente)} correlações com procedimento divergente** "
                             f"({_perc(n_proc_divergente, n_correlacionado)} dos correlacionados) — "
-                            "PRODUCAO e REPASSE têm procedimentos anatomicamente distintos. Revisar manualmente.",
+                            "PRODUCAO e REPASSE têm procedimentos anatomicamente distintos. Será Revisado manualmente.",
                             icon=None,
                         )
 
@@ -5017,42 +5017,67 @@ def main():
                         help="Urease/Helicobacter companion: principal já correlacionado no mesmo episódio",
                     )
 
-                    # ── Linha 1b: TUSS (se disponível) ───────────────────────
+                    # ── STATUS TUSS (se disponível) ──────────────────────────
                     tuss_col = df_final.get("StatusTUSS", pd.Series(dtype=str)).fillna("")
-                    n_tuss_downgrade  = (tuss_col == "COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES").sum()
-                    n_tuss_ausente    = (tuss_col == "COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE").sum()
-                    n_tuss_princ_div  = tuss_col.str.startswith("COBRAR_TUSS_CODIGO_PRINCIPAL_").sum()
-                    n_tuss_ok         = (tuss_col == "OK_TUSS_PROC_PRINCIPAL_OK").sum()
-                    n_tuss_rec        = tuss_col.isin({
-                        "OK_TUSS_PROC_ADICIONAL_RECONHECIDO",
-                        "OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS",
-                        "OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL",
-                    }).sum()
-                    n_tuss_alertas = n_tuss_downgrade + n_tuss_ausente + n_tuss_princ_div
-                    if n_tuss_alertas + n_tuss_ok + n_tuss_rec > 0:
+
+                    # Grupos semânticos por prefixo
+                    n_tuss_ok_total     = tuss_col.str.startswith("OK_").sum()
+                    n_tuss_cobrar_total = tuss_col.str.startswith("COBRAR_").sum()
+                    n_tuss_manual_total = tuss_col.str.startswith("CORRELACIONAR_MANUAL_").sum()
+                    n_tuss_com_status   = int(n_tuss_ok_total + n_tuss_cobrar_total + n_tuss_manual_total)
+
+                    if n_tuss_com_status > 0:
                         st.markdown("#### STATUS TUSS: Verificação de Repasse com base no código TUSS dos procedimentos")
                         tc1, tc2, tc3 = st.columns(3)
                         tc1.metric(
-                            "✅ Proc. Principal OK",
-                            int(n_tuss_ok + n_tuss_rec),
-                            delta=_perc(n_tuss_ok + n_tuss_rec, total_linhas),
+                            "✅ OK — Sem ação necessária",
+                            int(n_tuss_ok_total),
+                            delta=_perc(n_tuss_ok_total, total_linhas),
                             delta_color="off",
-                            help="Código TUSS do proc. principal correto no REPASSE (inclui adicionais reconhecidos e incorporados)",
+                            help="Código TUSS do repasse correto ou superior ao esperado (inclui adicionais reconhecidos e incorporados)",
                         )
                         tc2.metric(
-                            "🔴 Cobrado Como Simples",
-                            int(n_tuss_downgrade),
-                            delta=_perc(n_tuss_downgrade, total_linhas),
+                            "🔴 COBRAR — Valor a recuperar",
+                            int(n_tuss_cobrar_total),
+                            delta=_perc(n_tuss_cobrar_total, total_linhas),
                             delta_color="off",
-                            help="Procedimento faturado com código simples; deveria ter código combinado (biópsia, polipectomia etc.)",
+                            help="Código TUSS divergente, ausente ou mais simples — existe diferença a cobrar do hospital",
                         )
                         tc3.metric(
-                            "🟠 Código Ausente no Repasse",
-                            int(n_tuss_ausente + n_tuss_princ_div),
-                            delta=_perc(n_tuss_ausente + n_tuss_princ_div, total_linhas),
+                            "🟡 Revisar Manualmente",
+                            int(n_tuss_manual_total),
+                            delta=_perc(n_tuss_manual_total, total_linhas),
                             delta_color="off",
-                            help="Código TUSS esperado não encontrado no REPASSE (adicional ausente ou código principal divergente)",
+                            help="Combinação sem mapeamento TUSS ou repasse sem produção correspondente — requer análise manual",
                         )
+
+                        # ── Detalhamento por status individual ─────────────────
+                        _TUSS_DETAIL: list[tuple[str, str, str]] = [
+                            ("OK_TUSS_PROC_PRINCIPAL_OK",                           "Proc. Principal Correto",                   "✅ OK"),
+                            ("OK_TUSS_ADICIONAL_INCORPORADO_NO_PRINCIPAL",          "Adicional Incorporado no Principal",        "✅ OK"),
+                            ("OK_TUSS_PROC_ADICIONAL_RECONHECIDO",                  "Adicional Faturado com Código Correto",     "✅ OK"),
+                            ("OK_TUSS_TODOS_CODIGOS_ADICIONAIS_FATURADOS",          "Todos os Adicionais com Código Correto",    "✅ OK"),
+                            ("OK_TUSS_CODIGO_PRINCIPAL_UPGRADE",                    "Código Superior ao Esperado (Upgrade)",     "✅ OK"),
+                            ("COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES",     "Adicional Cobrado como Simples",            "🔴 COBRAR"),
+                            ("COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE",     "Adicional Ausente no Repasse",              "🔴 COBRAR"),
+                            ("COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE",             "Código Principal Divergente",               "🔴 COBRAR"),
+                            ("COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE",              "Código Principal Mais Simples (Downgrade)", "🔴 COBRAR"),
+                            ("COBRAR_TUSS_NAO_FATURADO_MAPEADO",                    "Não Cobrado – TUSS Identificado",           "🔴 COBRAR"),
+                            ("CORRELACIONAR_MANUAL_TUSS_REPASSE_SEM_PRODUCAO",      "Repasse sem Registro de Produção",          "🟡 Manual"),
+                            ("CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO", "Combinação sem Mapeamento TUSS",            "🟡 Manual"),
+                        ]
+                        _detail_rows = [
+                            {"Grupo": grupo, "Status": label, "Qtd": cnt, "%": _perc(cnt, total_linhas)}
+                            for status, label, grupo in _TUSS_DETAIL
+                            if (cnt := int((tuss_col == status).sum())) > 0
+                        ]
+                        if _detail_rows:
+                            with st.expander("📋 Detalhamento por StatusTUSS", expanded=False):
+                                st.dataframe(
+                                    pd.DataFrame(_detail_rows),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
 
                         # ── Estimativa de impacto financeiro (financeiro/admin) ──
                         _val_col = df_final.get("ValorEstimado_TUSS", pd.Series(dtype=str))
@@ -5060,9 +5085,14 @@ def main():
                         if not _val_num.empty and can_view_financial():
                             st.markdown("---")
                             st.markdown("#### 💰 Estimativa de Impacto Financeiro")
-                            _total_est = _val_num.sum()
-                            _n_com_valor = len(_val_num)
-                            _n_sem_valor = (n_tuss_downgrade + n_tuss_ausente) - _n_com_valor
+                            _total_est    = _val_num.sum()
+                            _n_com_valor  = len(_val_num)
+                            _cobrar_mask  = tuss_col.str.startswith("COBRAR_")
+                            _n_cobrar_sem_valor = max(
+                                0,
+                                int(_cobrar_mask.sum()) -
+                                int(pd.to_numeric(_val_col[_cobrar_mask], errors="coerce").notna().sum()),
+                            )
                             iv1, iv2, iv3 = st.columns(3)
                             iv1.metric(
                                 "💵 Valor Total Estimado",
@@ -5075,9 +5105,9 @@ def main():
                                 help="Itens cujo código TUSS consta em tuss_valores.csv",
                             )
                             iv3.metric(
-                                "⚠️ Itens sem estimativa",
-                                int(_n_sem_valor) if _n_sem_valor >= 0 else 0,
-                                help="Itens com código TUSS ainda sem histórico de valor",
+                                "⚠️ Itens COBRAR sem estimativa",
+                                _n_cobrar_sem_valor,
+                                help="Itens com status COBRAR_ mas sem histórico de valor TUSS cadastrado",
                             )
                             # Breakdown por convênio
                             _conv_col = df_final.get("Convenio_PRODUCAO", df_final.get("Convenio", pd.Series(dtype=str)))
