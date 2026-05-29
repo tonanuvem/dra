@@ -4938,6 +4938,9 @@ def main():
                     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
                     total_linhas = len(df_final)
 
+                    def _perc(n, base):
+                        return f"{n / base * 100:.1f}%" if base > 0 else "0.0%"
+
                     status_col = df_final.get("StatusCorrelacao", pd.Series(dtype=str))
                     mm = df_final.get("MetodoMatch", pd.Series(dtype=str)).fillna("")
                     # Correlacionados = qualquer status que comece com CORRELACIONADO
@@ -4953,6 +4956,14 @@ def main():
                     col_m4.metric("📅 Repasse fora do período de produção",  int(n_fora_periodo))
                     col_m5.metric("❌ Não Faturados",                       int(n_nao_faturado))
 
+                    if n_proc_divergente > 0:
+                        st.warning(
+                            f"🔬 **{int(n_proc_divergente)} correlação(ões) com procedimento divergente** "
+                            f"({_perc(n_proc_divergente, n_correlacionado)} dos correlacionados) — "
+                            "PRODUCAO e REPASSE têm procedimentos anatomicamente distintos. Revisar manualmente.",
+                            icon=None,
+                        )
+
                     # Métricas detalhadas de correlação
                     st.markdown("---")
                     st.markdown("### 📊 Resultados da Correlação")
@@ -4966,9 +4977,6 @@ def main():
                     n_m4  = mm.str.startswith("4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL").sum()
                     n_m5  = (mm == "5_FALLBACK_COMPANION_PROCEDIMENTO_ADICIONAL").sum()
                     n_sem = (mm == "SEM_MATCH").sum()
-
-                    def _perc(n, base):
-                        return f"{n / base * 100:.1f}%" if base > 0 else "0.0%"
 
                     # ── Linha 1: métricas de matches por método ───────────────
                     st.markdown("#### STATUS CORRELAÇÃO: Matches por método de correlação")
@@ -5023,7 +5031,7 @@ def main():
                     n_tuss_alertas = n_tuss_downgrade + n_tuss_ausente + n_tuss_princ_div
                     if n_tuss_alertas + n_tuss_ok + n_tuss_rec > 0:
                         st.markdown("#### STATUS TUSS: Verificação de Repasse com base no código TUSS dos procedimentos")
-                        tc1, tc2, tc3, tc4 = st.columns(4)
+                        tc1, tc2, tc3 = st.columns(3)
                         tc1.metric(
                             "✅ Proc. Principal OK",
                             int(n_tuss_ok + n_tuss_rec),
@@ -5044,11 +5052,6 @@ def main():
                             delta=_perc(n_tuss_ausente + n_tuss_princ_div, total_linhas),
                             delta_color="off",
                             help="Código TUSS esperado não encontrado no REPASSE (adicional ausente ou código principal divergente)",
-                        )
-                        tc4.metric(
-                            "🔎 Total Alertas",
-                            int(n_tuss_alertas),
-                            help="Abra a aba 📋 Gerar Cobrança para exportar o formulário de revisão",
                         )
 
                         # ── Estimativa de impacto financeiro (financeiro/admin) ──
@@ -5094,45 +5097,6 @@ def main():
                                 )
                                 with st.expander("📊 Breakdown por convênio", expanded=False):
                                     st.dataframe(_df_breakdown, use_container_width=True, hide_index=True)
-
-                    # ── Linha 2: pendências e alertas ─────────────────────────
-                    st.markdown("#### Pendências e alertas")
-                    pc1, pc2, pc3, pc4, pc5 = st.columns(5)
-                    pc1.metric(
-                        "❌ Não Faturados",
-                        f"{int(n_nao_faturado)}",
-                        delta=_perc(n_nao_faturado, total_linhas),
-                        delta_color="off",
-                        help="Linhas da PRODUCAO sem correspondência no REPASSE após todos os fallbacks",
-                    )
-                    pc2.metric(
-                        "⚠️ REPASSE s/ Produção",
-                        f"{int(n_repasse_nao_identificado)}",
-                        delta=_perc(n_repasse_nao_identificado, total_linhas),
-                        delta_color="off",
-                        help="Linhas do REPASSE sem correspondência na PRODUCAO",
-                    )
-                    pc3.metric(
-                        "🔬 Proc. Divergente",
-                        f"{int(n_proc_divergente)}",
-                        delta=_perc(n_proc_divergente, total_linhas),
-                        delta_color="off",
-                        help="Correlações onde PRODUCAO e REPASSE têm procedimentos anatomicamente distintos — revisar manualmente",
-                    )
-                    pc4.metric(
-                        "🕰️ Fora do Período",
-                        f"{int(n_fora_periodo)}",
-                        delta=_perc(n_fora_periodo, total_linhas),
-                        delta_color="off",
-                        help="REPASSE com datas anteriores ao período coberto pela PRODUCAO (faturamento tardio)",
-                    )
-                    pc5.metric(
-                        "🔎 Sem Match",
-                        f"{int(n_sem)}",
-                        delta=_perc(n_sem, total_linhas),
-                        delta_color="off",
-                        help="Linhas onde todos os métodos falharam",
-                    )
 
                     st.markdown("---")
 
