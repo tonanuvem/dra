@@ -4553,77 +4553,6 @@ def main():
                 else:
                     st.success("✅ Nenhum erro encontrado nos dados de PRODUÇÃO.")
 
-            # ── Linhas duplicadas no arquivo de correlação ────────────────────
-            # Detecta registros com hash idêntico (mesmas 8 colunas de input bruto)
-            # que indicam o mesmo registro REPASSE enviado múltiplas vezes pelo hospital.
-            _csv_corr_raw = st.session_state.get("csv_correlacionado")
-            if _csv_corr_raw:
-                _dup_df_key  = f"corr_df_{hash(_csv_corr_raw[:300])}"
-                _dup_res_key = f"corr_dups_{_dup_df_key}"
-
-                if _dup_res_key not in st.session_state:
-                    # Reutiliza df_final do cache (se tab4 já foi visitada) ou parseia agora
-                    if _dup_df_key not in st.session_state:
-                        _csv_limpo2     = extrair_csv_do_texto(_csv_corr_raw)
-                        _csv_d2, _res2  = separar_resumo_do_csv(_csv_limpo2)
-                        st.session_state[_dup_df_key] = (
-                            texto_para_dataframe(_csv_d2), _csv_d2, _res2
-                        )
-                    _df_dup_src, _, _ = st.session_state[_dup_df_key]
-
-                    if _df_dup_src is not None and not _df_dup_src.empty:
-                        import hashlib as _hl2
-                        def _h8_dup(row):
-                            _f = ["ChaveCorrelacao","ProcedimentosAdicionais_PRODUCAO",
-                                  "MedicoExecutor_REPASSE","NrRepasse_REPASSE",
-                                  "AbaOrigemDados_REPASSE","ValorLiberado_REPASSE",
-                                  "NrInternoConta_REPASSE","Via_REPASSE"]
-                            return _hl2.md5("|".join(str(row.get(c,"") or "") for c in _f).encode()).hexdigest()
-                        _h8_s = _df_dup_src.apply(_h8_dup, axis=1)
-                        _df_dups = _df_dup_src[_h8_s.duplicated(keep=False)].copy()
-                        _df_dups["_hash8"] = _h8_s[_h8_s.duplicated(keep=False)]
-                        st.session_state[_dup_res_key] = _df_dups
-                    else:
-                        st.session_state[_dup_res_key] = pd.DataFrame()
-
-                _df_dups_cached = st.session_state[_dup_res_key]
-
-                if not _df_dups_cached.empty:
-                    _n_dup_rows   = len(_df_dups_cached)
-                    _n_dup_groups = _df_dups_cached["_hash8"].nunique() if "_hash8" in _df_dups_cached.columns else 0
-                    with st.expander(
-                        f"⚠️ Linhas duplicadas no REPASSE — **{_n_dup_rows} linha(s)** em **{_n_dup_groups} grupo(s)**",
-                        expanded=True,
-                    ):
-                        _cd1, _cd2, _cd3 = st.columns(3)
-                        _cd1.metric("📋 Total de linhas dup.",   _n_dup_rows)
-                        _cd2.metric("🗂️ Grupos distintos",       _n_dup_groups)
-                        _cd3.metric("🗑️ Serão descartadas",      _n_dup_rows - _n_dup_groups,
-                                    help="Uma linha de cada grupo é mantida; as demais são excluídas da carga")
-                        st.caption(
-                            "O arquivo do hospital contém registros REPASSE idênticos enviados mais de uma vez. "
-                            "Apenas a primeira ocorrência de cada grupo é mantida na carga e nas métricas."
-                        )
-                        _dup_cols = [c for c in [
-                            "Paciente_PRODUCAO","Data_PRODUCAO","Procedimento_PRODUCAO",
-                            "StatusCorrelacao","StatusTUSS",
-                            "NrRepasse_REPASSE","NrInternoConta_REPASSE",
-                            "ValorLiberado_REPASSE","AbaOrigemDados_REPASSE",
-                        ] if c in _df_dups_cached.columns]
-                        st.dataframe(
-                            _df_dups_cached[_dup_cols].reset_index(drop=True),
-                            use_container_width=True,
-                        )
-                        _ts_dup = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        st.download_button(
-                            label="⬇️ Download linhas duplicadas (CSV)",
-                            data=_df_dups_cached[_dup_cols].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
-                            file_name=f"duplicatas_repasse_{_ts_dup}.csv",
-                            mime="text/csv",
-                        )
-                else:
-                    st.success("✅ Nenhuma linha duplicada detectada no arquivo de correlação.")
-
             # ── Resultados por arquivo ─────────────────────────────────────────
             for file, result in results.items():
                 st.subheader(file)
@@ -5019,15 +4948,16 @@ def main():
                               "AbaOrigemDados_REPASSE","ValorLiberado_REPASSE",
                               "NrInternoConta_REPASSE","Via_REPASSE"]
                         return _hl.md5("|".join(str(row.get(c,"") or "") for c in _f).encode()).hexdigest()
-                    _h8       = df_final.apply(_hash8, axis=1)
-                    _n_dupes  = int(_h8.duplicated().sum())
+                    _h8        = df_final.apply(_hash8, axis=1)
+                    _n_dupes   = int(_h8.duplicated().sum())
                     df_metrics = df_final[~_h8.duplicated(keep="first")].copy()
                     if _n_dupes > 0:
-                        st.warning(
-                            f"⚠️ **{_n_dupes} linha(s) duplicada(s)** detectada(s) no arquivo fonte "
-                            f"(mesmo registro aparecendo múltiplas vezes) — excluídas das métricas e da carga.",
-                            icon=None,
-                        )
+                        _mask_dups    = _h8.duplicated(keep=False)
+                        _df_dups      = df_final[_mask_dups].copy()
+                        _df_dups["_h8"] = _h8[_mask_dups]
+                        _n_dup_groups = int(_df_dups["_h8"].nunique())
+                    else:
+                        _df_dups, _n_dup_groups = pd.DataFrame(), 0
 
                     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
                     total_linhas = len(df_metrics)
@@ -5057,6 +4987,34 @@ def main():
                             "PRODUCAO e REPASSE têm procedimentos anatomicamente distintos. Será Revisado manualmente.",
                             icon=None,
                         )
+
+                    if _n_dupes > 0:
+                        st.markdown(
+                            f"⚠️ **{_n_dupes} linha(s) duplicada(s)** detectada(s) no arquivo fonte "
+                            f"(mesmo registro REPASSE enviado múltiplas vezes pelo hospital) — "
+                            "excluídas das métricas e da carga."
+                        )
+                        with st.expander(
+                            f"🔍 Ver linhas duplicadas — {_n_dup_groups} grupo(s), {_n_dupes} linha(s)",
+                            expanded=False,
+                        ):
+                            _dup_cols = [c for c in [
+                                "Paciente_PRODUCAO", "Data_PRODUCAO", "Procedimento_PRODUCAO",
+                                "StatusCorrelacao", "StatusTUSS",
+                                "NrRepasse_REPASSE", "NrInternoConta_REPASSE",
+                                "ValorLiberado_REPASSE", "AbaOrigemDados_REPASSE",
+                            ] if c in _df_dups.columns]
+                            st.dataframe(
+                                _df_dups[_dup_cols].reset_index(drop=True),
+                                use_container_width=True,
+                            )
+                            _ts_dup = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            st.download_button(
+                                label="⬇️ Download duplicatas (CSV)",
+                                data=_df_dups[_dup_cols].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                                file_name=f"duplicatas_repasse_{_ts_dup}.csv",
+                                mime="text/csv",
+                            )
 
                     # Métricas detalhadas de correlação
                     st.markdown("---")
@@ -5120,9 +5078,16 @@ def main():
                     n_tuss_manual_total = tuss_col.str.startswith("CORRELACIONAR_MANUAL_").sum()
                     n_tuss_com_status   = int(n_tuss_ok_total + n_tuss_cobrar_total + n_tuss_manual_total)
 
+                    # Desdobramento do COBRAR: correlacionados vs não faturados
+                    _cobrar_mask_col = tuss_col.str.startswith("COBRAR_")
+                    n_cobrar_correlac = int(
+                        (_cobrar_mask_col & status_col.str.startswith("CORRELACIONADO")).sum()
+                    )
+                    n_cobrar_nao_fat  = int((tuss_col == "COBRAR_TUSS_NAO_FATURADO_MAPEADO").sum())
+
                     if n_tuss_com_status > 0:
                         st.markdown("#### STATUS TUSS: Verificação de Repasse com base no código TUSS dos procedimentos")
-                        tc1, tc2, tc3 = st.columns(3)
+                        tc1, tc2a, tc2b, tc3 = st.columns(4)
                         tc1.metric(
                             "✅ OK — Sem ação necessária",
                             int(n_tuss_ok_total),
@@ -5130,12 +5095,27 @@ def main():
                             delta_color="off",
                             help="Código TUSS do repasse correto ou superior ao esperado (inclui adicionais reconhecidos e incorporados)",
                         )
-                        tc2.metric(
-                            "🔴 COBRAR — Valor a recuperar",
-                            int(n_tuss_cobrar_total),
-                            delta=_perc(n_tuss_cobrar_total, total_linhas),
+                        tc2a.metric(
+                            "🔴 COBRAR — Correlacionados",
+                            n_cobrar_correlac,
+                            delta=_perc(n_cobrar_correlac, total_linhas),
                             delta_color="off",
-                            help="Código TUSS divergente, ausente ou mais simples — existe diferença a cobrar do hospital",
+                            help=(
+                                "Procedimento correlacionado, mas o código TUSS do repasse está divergente, "
+                                "mais simples (downgrade) ou ausente — cobrança sobre repasse já existente. "
+                                "Inclui: Downgrade, Divergente, Adicional Cobrado como Simples, Adicional Ausente."
+                            ),
+                        )
+                        tc2b.metric(
+                            "🔴 COBRAR — Não Faturados",
+                            n_cobrar_nao_fat,
+                            delta=_perc(n_cobrar_nao_fat, total_linhas),
+                            delta_color="off",
+                            help=(
+                                "Procedimento ausente no repasse (não faturado pelo hospital), "
+                                "mas com código TUSS identificado no mapeamento — "
+                                "cobrança sobre repasse inexistente."
+                            ),
                         )
                         tc3.metric(
                             "🟡 Revisar Manualmente",

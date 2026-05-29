@@ -45,7 +45,7 @@ export default function DashboardPage() {
           loading={loading}
         />
         <KpiCard
-          title="Não Repassados"
+          title="Não Faturados"
           value={loading ? '—' : stats.naoFaturados.toLocaleString('pt-BR')}
           subtitle="Sem correspondência no repasse"
           pctLabel={stats.total ? `${((stats.naoFaturados / stats.total) * 100).toFixed(0)}% do total` : undefined}
