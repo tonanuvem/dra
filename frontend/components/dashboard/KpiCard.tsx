@@ -39,7 +39,7 @@ export function KpiCard({ title, value, subtitle, pctLabel, icon: Icon, color, h
 
   const inner = (
     <div className={cn(
-      'rounded-xl border p-3 sm:p-4 flex items-start gap-3 transition-shadow h-full',
+      'rounded-xl border p-3 sm:p-4 flex items-center gap-3 transition-shadow h-full',
       c.bg, c.border,
       href && 'hover:shadow-md cursor-pointer active:scale-[0.98]',
     )}>
