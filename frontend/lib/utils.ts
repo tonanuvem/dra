@@ -56,10 +56,10 @@ export function getMetodoMatchLabel(metodo: MetodoMatch | null): string {
 export function getStatusCorrelacaoLabel(status: StatusCorrelacao | null): string {
   if (!status) return '—'
   const labels: Record<string, string> = {
-    'CORRELACIONADO':                        'Pago e Conferido',
-    'NAO_FATURADO_NO_REPASSE':               'Procedimento não Repassado pelo Hospital',
-    'REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO':  'Pago pelo Hospital sem Registro na Produção',
-    'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO': 'Cobrança Fora do Período Analisado',
+    'CORRELACIONADO':                        'Correlacionado',
+    'NAO_FATURADO_NO_REPASSE':               'Não Faturado no Repasse',
+    'REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO':  'Pago sem Registro na Produção',
+    'REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO': 'Cobrança Fora do Período',
   }
   return labels[status] ?? status
 }

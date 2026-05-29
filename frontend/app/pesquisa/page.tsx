@@ -15,9 +15,9 @@ type ChipStatus = 'todos' | 'correlacionado' | 'nao_faturado' | 'repasse_nao_id'
 
 const CHIPS: { id: ChipStatus; label: string }[] = [
   { id: 'todos',         label: 'Todos'                      },
-  { id: 'correlacionado',label: 'Pago e Conferido'           },
+  { id: 'correlacionado',label: 'Correlacionado'             },
   { id: 'nao_faturado',  label: 'Não Faturado no Repasse'    },
-  { id: 'repasse_nao_id',label: 'Pago sem Registro'          },
+  { id: 'repasse_nao_id',label: 'Pago sem Registro na Produção' },
   { id: 'cobrar',        label: 'A Cobrar (TUSS)'            },
   { id: 'manual',        label: 'Análise Manual'             },
 ]
