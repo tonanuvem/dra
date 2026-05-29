@@ -7,7 +7,7 @@
 --  Seções:
 --    1. Extensão pg_trgm
 --    2. CREATE TABLE correlacao_endoscopia
---    3. UNIQUE constraint (lote_processamento, hash_conteudo)
+--    3. UNIQUE INDEX parcial (lote_processamento, hash_conteudo) WHERE is_duplicata=false
 --    4. Índices de performance
 --    5. RLS policies
 --    6. Trigger de enriquecimento no INSERT
@@ -163,7 +163,8 @@ COMMENT ON TABLE public.correlacao_endoscopia IS
 COMMENT ON COLUMN public.correlacao_endoscopia.lote_processamento IS
   'Sufixo do arquivo CSV gerado pelo motor: "YYYYMMDD_HHmmss". Permite identificar e limpar lotes.';
 COMMENT ON COLUMN public.correlacao_endoscopia.hash_conteudo IS
-  'MD5 de 11 campos discriminatórios. Calculado pelo trigger BEFORE INSERT — não enviar pelo app.py.';
+  'MD5 de 8 campos de input bruto (imutáveis). Calculado pelo trigger BEFORE INSERT — não enviar pelo app.py. '
+  'Colunas derivadas (StatusTUSS, MetodoMatch, CodigosTUSS_Esperados) foram excluídas para estabilidade entre reprocessamentos.';
 COMMENT ON COLUMN public.correlacao_endoscopia.is_duplicata IS
   'true = linha já existe em lote anterior com conteúdo idêntico. Oculta no frontend por padrão.';
 COMMENT ON COLUMN public.correlacao_endoscopia.id_original IS
@@ -177,15 +178,19 @@ COMMENT ON COLUMN public.correlacao_endoscopia.decisao_humana IS
 
 
 -- ─────────────────────────────────────────────────────────────
--- 3. UNIQUE CONSTRAINT
---    Garante que dentro de um mesmo lote não há dois registros
---    com conteúdo idêntico (hash igual). Duplicatas intra-batch
---    são silenciadas pelo ON CONFLICT DO NOTHING no app.py.
+-- 3. UNIQUE INDEX PARCIAL
+--    Garante unicidade de (lote, hash) apenas para registros
+--    canônicos (is_duplicata = false). Permite que duplicatas
+--    cross-lote coexistam com o mesmo hash em lotes distintos.
+--    Duplicatas intra-lote são silenciadas via ON CONFLICT DO NOTHING.
+--
+--    O trigger BEFORE INSERT seta is_duplicata antes da checagem
+--    do índice, então o fluxo é seguro sem race conditions.
 -- ─────────────────────────────────────────────────────────────
 
-ALTER TABLE public.correlacao_endoscopia
-  ADD CONSTRAINT correlacao_lote_hash_uniq
-  UNIQUE (lote_processamento, hash_conteudo);
+CREATE UNIQUE INDEX IF NOT EXISTS correlacao_lote_hash_nodup_uniq
+  ON public.correlacao_endoscopia (lote_processamento, hash_conteudo)
+  WHERE is_duplicata = false;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -290,15 +295,17 @@ CREATE POLICY "correlacao: admin delete"
 --      C. Carry-over da decisão humana mais recente para o mesmo
 --         ChaveCorrelacao (qualquer lote, is_duplicata = false)
 --
---    Campos que determinam o hash (11):
---      ChaveCorrelacao, StatusTUSS, CodigosTUSS_Esperados,
---      MetodoMatch, ProcedimentosAdicionais_PRODUCAO,
+--    Campos que determinam o hash (8 — apenas input bruto, imutáveis):
+--      ChaveCorrelacao, ProcedimentosAdicionais_PRODUCAO,
 --      MedicoExecutor_REPASSE, NrRepasse_REPASSE,
 --      AbaOrigemDados_REPASSE, ValorLiberado_REPASSE,
 --      NrInternoConta_REPASSE, Via_REPASSE
 --
---    Selecionados após análise do CSV real (20260527):
---      5.772 linhas → 5.767 hashes únicos → 5 duplicatas reais → 0 falsas colisões
+--    Excluídos do hash (colunas derivadas/mutáveis):
+--      StatusTUSS            → muda quando algoritmo de enriquecimento muda
+--      CodigosTUSS_Esperados → muda quando lookup table é atualizado
+--      MetodoMatch           → muda quando motor de correlação melhora
+--    Incluí-las causava detecção falsa de duplicatas entre lotes re-processados.
 -- ─────────────────────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION public.enrich_correlacao_on_insert()
@@ -312,11 +319,12 @@ BEGIN
   -- ── A. Calcular hash_conteudo ────────────────────────────
   --    Separador '|' entre campos; coalesce garante que NULL → ''
   --    ValorLiberado_REPASSE é NUMERIC → cast para TEXT
+  -- Apenas colunas de input bruto — imutáveis entre reprocessamentos.
+  -- StatusTUSS, CodigosTUSS_Esperados e MetodoMatch foram excluídos:
+  -- são colunas derivadas que mudam quando o motor Python é atualizado,
+  -- o que causava detecção falsa de duplicatas cross-lote.
   NEW.hash_conteudo := md5(
     coalesce(NEW."ChaveCorrelacao",                  '') || '|' ||
-    coalesce(NEW."StatusTUSS",                       '') || '|' ||
-    coalesce(NEW."CodigosTUSS_Esperados",            '') || '|' ||
-    coalesce(NEW."MetodoMatch",                      '') || '|' ||
     coalesce(NEW."ProcedimentosAdicionais_PRODUCAO", '') || '|' ||
     coalesce(NEW."MedicoExecutor_REPASSE",           '') || '|' ||
     coalesce(NEW."NrRepasse_REPASSE",                '') || '|' ||
@@ -378,7 +386,7 @@ CREATE TRIGGER correlacao_enrich_on_insert
   EXECUTE FUNCTION public.enrich_correlacao_on_insert();
 
 COMMENT ON FUNCTION public.enrich_correlacao_on_insert IS
-  'BEFORE INSERT: calcula hash_conteudo (MD5/11 campos), detecta duplicatas cross-lote '
+  'BEFORE INSERT: calcula hash_conteudo (MD5/8 campos de input bruto), detecta duplicatas cross-lote '
   'e faz carry-over de decisao_humana/revisado_em/notas_revisor do lote anterior.';
 
 
@@ -434,9 +442,10 @@ BEGIN
   ) INTO v_table;
 
   SELECT EXISTS (
-    SELECT 1 FROM pg_constraint
-     WHERE conname = 'correlacao_lote_hash_uniq'
-       AND conrelid = 'public.correlacao_endoscopia'::regclass
+    SELECT 1 FROM pg_indexes
+     WHERE schemaname = 'public'
+       AND tablename  = 'correlacao_endoscopia'
+       AND indexname  = 'correlacao_lote_hash_nodup_uniq'
   ) INTO v_uniq;
 
   SELECT relrowsecurity
@@ -510,9 +519,11 @@ $$;
 --    5   TUSS                  StatusTUSS, códigos, valores
 --    3   auditoria humana      decisao_humana, revisado_em, notas_revisor
 --
---  UNIQUE: (lote_processamento, hash_conteudo)
+--  UNIQUE INDEX PARCIAL: (lote_processamento, hash_conteudo) WHERE is_duplicata=false
 --    → intra-batch duplicates silenciados via ON CONFLICT DO NOTHING
 --    → cross-lote duplicates detectados pelo trigger
+--    → hash baseado em 8 campos de input bruto (StatusTUSS/MetodoMatch/
+--      CodigosTUSS_Esperados excluídos por serem colunas derivadas)
 --
 --  Índices (10):
 --    hash_conteudo WHERE is_duplicata=false    (trigger dedup)
