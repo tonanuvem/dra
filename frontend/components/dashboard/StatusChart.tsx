@@ -3,13 +3,25 @@
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts'
 import { getStatusCorrelacaoLabel } from '@/lib/utils'
 
-// Cores semânticas por status
 const STATUS_COLORS: Record<string, string> = {
   CORRELACIONADO:                        '#22c55e',
   NAO_FATURADO_NO_REPASSE:               '#ef4444',
   REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO:  '#8b5cf6',
   REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO: '#64748b',
 }
+
+const TUSS_COLORS: Record<string, string> = {
+  TUSS_OK:     '#22c55e',
+  TUSS_COBRAR: '#ef4444',
+  TUSS_MANUAL: '#f59e0b',
+}
+
+const TUSS_LABELS: Record<string, string> = {
+  TUSS_OK:     'Código TUSS Pago e Conferido',
+  TUSS_COBRAR: 'A Cobrar',
+  TUSS_MANUAL: 'Análise Manual Necessária',
+}
+
 const FALLBACK_PALETTE = ['#94a3b8', '#cbd5e1', '#bae6fd', '#fde68a', '#bbf7d0']
 
 function fmtBRL(value: number): string {
@@ -18,26 +30,27 @@ function fmtBRL(value: number): string {
 
 interface StatusChartProps {
   data: { status: string; total: number; valor: number; valorPago: number }[]
-  /** Exibe valores financeiros (R$). false para visualizador/editor */
   showFinancial?: boolean
+  mode?: 'correlacao' | 'tuss'
 }
 
-export function StatusChart({ data, showFinancial = true }: StatusChartProps) {
+export function StatusChart({ data, showFinancial = true, mode = 'correlacao' }: StatusChartProps) {
+  const isTUSS = mode === 'tuss'
   const totalRegistros = data.reduce((s, d) => s + d.total, 0)
   const totalValorPago = data.reduce((s, d) => s + d.valorPago, 0)
 
   const chartData = data.map((d, i) => ({
-    raw:        d.status,
-    name:       getStatusCorrelacaoLabel(d.status as any) ?? d.status,
-    value:      d.total,
-    valorPago:  d.valorPago,
-    pctReg:     totalRegistros > 0
-                  ? ((d.total     / totalRegistros) * 100).toFixed(1)
-                  : '0.0',
-    pctValor:   totalValorPago > 0
-                  ? ((d.valorPago / totalValorPago) * 100).toFixed(1)
-                  : '0.0',
-    color: STATUS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length],
+    raw:       d.status,
+    name:      isTUSS
+                 ? (TUSS_LABELS[d.status] ?? d.status)
+                 : (getStatusCorrelacaoLabel(d.status as any) ?? d.status),
+    value:     d.total,
+    valorPago: d.valorPago,
+    pctReg:    totalRegistros > 0 ? ((d.total     / totalRegistros) * 100).toFixed(1) : '0.0',
+    pctValor:  totalValorPago > 0 ? ((d.valorPago / totalValorPago) * 100).toFixed(1) : '0.0',
+    color:     isTUSS
+                 ? (TUSS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length])
+                 : (STATUS_COLORS[d.status] ?? FALLBACK_PALETTE[i % FALLBACK_PALETTE.length]),
   }))
 
   return (
@@ -45,7 +58,9 @@ export function StatusChart({ data, showFinancial = true }: StatusChartProps) {
 
       {/* ── Cabeçalho ──────────────────────────────────── */}
       <div className="flex items-start justify-between gap-4">
-        <h3 className="text-sm font-semibold text-gray-700">Distribuição por Status</h3>
+        <h3 className="text-sm font-semibold text-gray-700">
+          {isTUSS ? 'Verificação TUSS do Repasse' : 'Distribuição por Status de Correlação'}
+        </h3>
         {showFinancial && totalValorPago > 0 && (
           <div className="text-right flex-shrink-0">
             <p className="text-[10px] text-gray-400 leading-tight">Total pago no repasse</p>

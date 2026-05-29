@@ -9,7 +9,7 @@ interface KpiCardProps {
   /** Percentual exibido abaixo do subtítulo, ex: "35% do total" */
   pctLabel?: string
   icon: LucideIcon
-  color: 'green' | 'red' | 'orange' | 'blue' | 'purple'
+  color: 'green' | 'red' | 'orange' | 'blue' | 'purple' | 'yellow'
   href?: string
   loading?: boolean
 }
@@ -20,6 +20,7 @@ const colorMap = {
   orange: { bg: 'bg-orange-50', border: 'border-orange-200', icon: 'text-orange-600 bg-orange-100',value: 'text-orange-700' },
   blue:   { bg: 'bg-blue-50',   border: 'border-blue-200',   icon: 'text-blue-600 bg-blue-100',    value: 'text-blue-700'   },
   purple: { bg: 'bg-purple-50', border: 'border-purple-200', icon: 'text-purple-600 bg-purple-100',value: 'text-purple-700' },
+  yellow: { bg: 'bg-yellow-50', border: 'border-yellow-200', icon: 'text-yellow-600 bg-yellow-100',value: 'text-yellow-700' },
 }
 
 export function KpiCard({ title, value, subtitle, pctLabel, icon: Icon, color, href, loading }: KpiCardProps) {

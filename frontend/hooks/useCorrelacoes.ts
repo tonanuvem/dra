@@ -99,16 +99,19 @@ export function useDashboardStats() {
     correlacionados: 0,
     naoFaturados: 0,
     repasseNaoIdentificado: 0,
+    repasseForaPeriodo: 0,
     glosaTotal: 0,
     glosaParci: 0,
     procedimentoDivergente: 0,
     pendentesRevisao: 0,
     valorRecuperar: 0,
     statusDistribution: [] as { status: string; total: number; valor: number; valorPago: number }[],
-    // ── Filas TUSS ───────────────────────────────────────
-    // Causa 1+3: código identificado mas sem histórico de preço
+    tussOk: 0,
+    tussCobrarCorrelacionados: 0,
+    tussCobrarNaoFaturados: 0,
+    tussManual: 0,
+    tussStatusDistribution: [] as { status: string; total: number; valor: number; valorPago: number }[],
     tussCodigoSemHistorico: 0,
-    // Causa 2: mapeamento sem código TUSS definido
     tussMapeamentoSemCodigo: 0,
   })
   const [loading, setLoading] = useState(true)
@@ -145,10 +148,14 @@ export function useDashboardStats() {
         if (allRows.length === 0) return
 
         const byStatus: Record<string, { count: number; valor: number; valorPago: number }> = {}
-        let pendentesRevisao      = 0
-        let valorRecuperar        = 0
-        let tussCodigoSemHistorico = 0  // Causa 1+3: código mapeado mas sem preço histórico
-        let tussMapeamentoSemCodigo = 0 // Causa 2: mapeamento existe mas código TUSS vazio
+        let pendentesRevisao         = 0
+        let valorRecuperar           = 0
+        let tussCodigoSemHistorico   = 0
+        let tussMapeamentoSemCodigo  = 0
+        let tussOk                   = 0
+        let tussCobrarCorrelacionados = 0
+        let tussCobrarNaoFaturados    = 0
+        let tussManual               = 0
 
         // StatusTUSS que geram recuperação financeira ativa (mesmos da aba Faturamento)
         const RECOVERY_TUSS = new Set([
@@ -189,6 +196,18 @@ export function useDashboardStats() {
             valorRecuperar += gap
           }
 
+          // ── Grupos TUSS ─────────────────────────────────────────────────
+          const st = row.StatusTUSS ?? ''
+          const sc = row.StatusCorrelacao ?? ''
+          if (st.startsWith('OK_')) {
+            tussOk++
+          } else if (st.startsWith('COBRAR_')) {
+            if (sc === 'CORRELACIONADO') tussCobrarCorrelacionados++
+            else if (sc === 'NAO_FATURADO_NO_REPASSE') tussCobrarNaoFaturados++
+          } else if (st.startsWith('CORRELACIONAR_MANUAL_')) {
+            tussManual++
+          }
+
           // ── Filas TUSS: apenas NAO_FATURADO_NO_REPASSE + COBRAR_TUSS_NAO_FATURADO_MAPEADO sem valor
           const isNaoFaturadoMapeado =
             row.StatusCorrelacao === 'NAO_FATURADO_NO_REPASSE' &&
@@ -210,11 +229,18 @@ export function useDashboardStats() {
           .map(([status, { count, valor, valorPago }]) => ({ status, total: count, valor, valorPago }))
           .sort((a, b) => b.total - a.total)
 
+        const tussStatusDistribution = [
+          { status: 'TUSS_OK',     total: tussOk,                                        valor: 0, valorPago: 0 },
+          { status: 'TUSS_COBRAR', total: tussCobrarCorrelacionados + tussCobrarNaoFaturados, valor: 0, valorPago: 0 },
+          { status: 'TUSS_MANUAL', total: tussManual,                                     valor: 0, valorPago: 0 },
+        ]
+
         setStats({
           total: allRows.length,
           correlacionados: byStatus['CORRELACIONADO']?.count ?? 0,
           naoFaturados: byStatus['NAO_FATURADO_NO_REPASSE']?.count ?? 0,
           repasseNaoIdentificado: byStatus['REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO']?.count ?? 0,
+          repasseForaPeriodo: byStatus['REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO']?.count ?? 0,
           glosaTotal: allRows.filter(r =>
             r.StatusCorrelacao === 'CORRELACIONADO' &&
             Number(r.ValorLiberado_REPASSE ?? 0) === 0 &&
@@ -232,6 +258,11 @@ export function useDashboardStats() {
           pendentesRevisao,
           valorRecuperar,
           statusDistribution: dist,
+          tussOk,
+          tussCobrarCorrelacionados,
+          tussCobrarNaoFaturados,
+          tussManual,
+          tussStatusDistribution,
           tussCodigoSemHistorico,
           tussMapeamentoSemCodigo,
         })
