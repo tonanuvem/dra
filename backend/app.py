@@ -4553,6 +4553,77 @@ def main():
                 else:
                     st.success("✅ Nenhum erro encontrado nos dados de PRODUÇÃO.")
 
+            # ── Linhas duplicadas no arquivo de correlação ────────────────────
+            # Detecta registros com hash idêntico (mesmas 8 colunas de input bruto)
+            # que indicam o mesmo registro REPASSE enviado múltiplas vezes pelo hospital.
+            _csv_corr_raw = st.session_state.get("csv_correlacionado")
+            if _csv_corr_raw:
+                _dup_df_key  = f"corr_df_{hash(_csv_corr_raw[:300])}"
+                _dup_res_key = f"corr_dups_{_dup_df_key}"
+
+                if _dup_res_key not in st.session_state:
+                    # Reutiliza df_final do cache (se tab4 já foi visitada) ou parseia agora
+                    if _dup_df_key not in st.session_state:
+                        _csv_limpo2     = extrair_csv_do_texto(_csv_corr_raw)
+                        _csv_d2, _res2  = separar_resumo_do_csv(_csv_limpo2)
+                        st.session_state[_dup_df_key] = (
+                            texto_para_dataframe(_csv_d2), _csv_d2, _res2
+                        )
+                    _df_dup_src, _, _ = st.session_state[_dup_df_key]
+
+                    if _df_dup_src is not None and not _df_dup_src.empty:
+                        import hashlib as _hl2
+                        def _h8_dup(row):
+                            _f = ["ChaveCorrelacao","ProcedimentosAdicionais_PRODUCAO",
+                                  "MedicoExecutor_REPASSE","NrRepasse_REPASSE",
+                                  "AbaOrigemDados_REPASSE","ValorLiberado_REPASSE",
+                                  "NrInternoConta_REPASSE","Via_REPASSE"]
+                            return _hl2.md5("|".join(str(row.get(c,"") or "") for c in _f).encode()).hexdigest()
+                        _h8_s = _df_dup_src.apply(_h8_dup, axis=1)
+                        _df_dups = _df_dup_src[_h8_s.duplicated(keep=False)].copy()
+                        _df_dups["_hash8"] = _h8_s[_h8_s.duplicated(keep=False)]
+                        st.session_state[_dup_res_key] = _df_dups
+                    else:
+                        st.session_state[_dup_res_key] = pd.DataFrame()
+
+                _df_dups_cached = st.session_state[_dup_res_key]
+
+                if not _df_dups_cached.empty:
+                    _n_dup_rows   = len(_df_dups_cached)
+                    _n_dup_groups = _df_dups_cached["_hash8"].nunique() if "_hash8" in _df_dups_cached.columns else 0
+                    with st.expander(
+                        f"⚠️ Linhas duplicadas no REPASSE — **{_n_dup_rows} linha(s)** em **{_n_dup_groups} grupo(s)**",
+                        expanded=True,
+                    ):
+                        _cd1, _cd2, _cd3 = st.columns(3)
+                        _cd1.metric("📋 Total de linhas dup.",   _n_dup_rows)
+                        _cd2.metric("🗂️ Grupos distintos",       _n_dup_groups)
+                        _cd3.metric("🗑️ Serão descartadas",      _n_dup_rows - _n_dup_groups,
+                                    help="Uma linha de cada grupo é mantida; as demais são excluídas da carga")
+                        st.caption(
+                            "O arquivo do hospital contém registros REPASSE idênticos enviados mais de uma vez. "
+                            "Apenas a primeira ocorrência de cada grupo é mantida na carga e nas métricas."
+                        )
+                        _dup_cols = [c for c in [
+                            "Paciente_PRODUCAO","Data_PRODUCAO","Procedimento_PRODUCAO",
+                            "StatusCorrelacao","StatusTUSS",
+                            "NrRepasse_REPASSE","NrInternoConta_REPASSE",
+                            "ValorLiberado_REPASSE","AbaOrigemDados_REPASSE",
+                        ] if c in _df_dups_cached.columns]
+                        st.dataframe(
+                            _df_dups_cached[_dup_cols].reset_index(drop=True),
+                            use_container_width=True,
+                        )
+                        _ts_dup = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        st.download_button(
+                            label="⬇️ Download linhas duplicadas (CSV)",
+                            data=_df_dups_cached[_dup_cols].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig"),
+                            file_name=f"duplicatas_repasse_{_ts_dup}.csv",
+                            mime="text/csv",
+                        )
+                else:
+                    st.success("✅ Nenhuma linha duplicada detectada no arquivo de correlação.")
+
             # ── Resultados por arquivo ─────────────────────────────────────────
             for file, result in results.items():
                 st.subheader(file)
@@ -4935,14 +5006,37 @@ def main():
                 st.subheader("📊 Tabela Correlacionada")
 
                 if df_final is not None and not df_final.empty:
+                    # ── Deduplicação intra-lote ───────────────────────────────
+                    # Usa as mesmas 8 colunas de input bruto do trigger Supabase.
+                    # Remove linhas 100 % idênticas que o hospital enviou em duplicata
+                    # (ex: mesmo registro REPASSE aparecendo duas vezes no arquivo).
+                    # df_metrics é usado para métricas, filtros e upload.
+                    # df_final (raw) permanece intacto para o download CSV.
+                    import hashlib as _hl
+                    def _hash8(row):
+                        _f = ["ChaveCorrelacao","ProcedimentosAdicionais_PRODUCAO",
+                              "MedicoExecutor_REPASSE","NrRepasse_REPASSE",
+                              "AbaOrigemDados_REPASSE","ValorLiberado_REPASSE",
+                              "NrInternoConta_REPASSE","Via_REPASSE"]
+                        return _hl.md5("|".join(str(row.get(c,"") or "") for c in _f).encode()).hexdigest()
+                    _h8       = df_final.apply(_hash8, axis=1)
+                    _n_dupes  = int(_h8.duplicated().sum())
+                    df_metrics = df_final[~_h8.duplicated(keep="first")].copy()
+                    if _n_dupes > 0:
+                        st.warning(
+                            f"⚠️ **{_n_dupes} linha(s) duplicada(s)** detectada(s) no arquivo fonte "
+                            f"(mesmo registro aparecendo múltiplas vezes) — excluídas das métricas e da carga.",
+                            icon=None,
+                        )
+
                     col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
-                    total_linhas = len(df_final)
+                    total_linhas = len(df_metrics)
 
                     def _perc(n, base):
                         return f"{n / base * 100:.1f}%" if base > 0 else "0.0%"
 
-                    status_col = df_final.get("StatusCorrelacao", pd.Series(dtype=str))
-                    mm = df_final.get("MetodoMatch", pd.Series(dtype=str)).fillna("")
+                    status_col = df_metrics.get("StatusCorrelacao", pd.Series(dtype=str))
+                    mm = df_metrics.get("MetodoMatch", pd.Series(dtype=str)).fillna("")
                     # Correlacionados = qualquer status que comece com CORRELACIONADO
                     n_correlacionado           = status_col.str.upper().str.startswith("CORRELACIONADO").sum()
                     n_repasse_nao_identificado = (status_col.str.upper() == "REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO").sum()
@@ -5018,7 +5112,7 @@ def main():
                     )
 
                     # ── STATUS TUSS (se disponível) ──────────────────────────
-                    tuss_col = df_final.get("StatusTUSS", pd.Series(dtype=str)).fillna("")
+                    tuss_col = df_metrics.get("StatusTUSS", pd.Series(dtype=str)).fillna("")
 
                     # Grupos semânticos por prefixo
                     n_tuss_ok_total     = tuss_col.str.startswith("OK_").sum()
@@ -5080,7 +5174,7 @@ def main():
                                 )
 
                         # ── Estimativa de impacto financeiro (financeiro/admin) ──
-                        _val_col = df_final.get("ValorEstimado_TUSS", pd.Series(dtype=str))
+                        _val_col = df_metrics.get("ValorEstimado_TUSS", pd.Series(dtype=str))
                         _val_num = pd.to_numeric(_val_col, errors="coerce").dropna()
                         if not _val_num.empty and can_view_financial():
                             st.markdown("---")
@@ -5110,11 +5204,11 @@ def main():
                                 help="Itens com status COBRAR_ mas sem histórico de valor TUSS cadastrado",
                             )
                             # Breakdown por convênio
-                            _conv_col = df_final.get("Convenio_PRODUCAO", df_final.get("Convenio", pd.Series(dtype=str)))
+                            _conv_col = df_metrics.get("Convenio_PRODUCAO", df_metrics.get("Convenio", pd.Series(dtype=str)))
                             _mask_elig = _val_col.replace("", float("nan")).notna()
                             if _mask_elig.any():
                                 _df_breakdown = (
-                                    df_final[_mask_elig]
+                                    df_metrics[_mask_elig]
                                     .assign(_val_num=pd.to_numeric(_val_col[_mask_elig], errors="coerce"))
                                     .groupby(_conv_col[_mask_elig].fillna("(sem convênio)"))
                                     .agg(Itens=("_val_num", "count"), ValorTotal=("_val_num", "sum"))
@@ -5133,13 +5227,13 @@ def main():
                     with st.expander("🔍 Filtros", expanded=False):
                         fcol1, fcol2, fcol3, fcol4, fcol5 = st.columns(5)
 
-                        convenios_disp = sorted(df_final.get("Convenio_PRODUCAO", pd.Series()).dropna().unique().tolist())
+                        convenios_disp = sorted(df_metrics.get("Convenio_PRODUCAO", pd.Series()).dropna().unique().tolist())
                         filtro_convenio = fcol1.multiselect(
                             "Convênio", convenios_disp,
                             placeholder="Todos",
                         )
 
-                        _status_corr_raw = sorted(df_final.get("StatusCorrelacao", pd.Series()).dropna().unique().tolist())
+                        _status_corr_raw = sorted(df_metrics.get("StatusCorrelacao", pd.Series()).dropna().unique().tolist())
                         _status_corr_labels = sorted([LABEL_STATUS_CORR.get(s, s) for s in _status_corr_raw])
                         _filtro_status_labels = fcol2.multiselect(
                             "Status Correlação", _status_corr_labels,
@@ -5147,13 +5241,13 @@ def main():
                         )
                         filtro_status = [_CORR_LABEL_TO_RAW.get(l, l) for l in _filtro_status_labels]
 
-                        tuss_disp = sorted(df_final.get("CodigoTUSS_REPASSE", pd.Series()).dropna().unique().tolist())
+                        tuss_disp = sorted(df_metrics.get("CodigoTUSS_REPASSE", pd.Series()).dropna().unique().tolist())
                         filtro_tuss = fcol3.multiselect(
                             "Código TUSS", tuss_disp,
                             placeholder="Todos",
                         )
 
-                        _status_tuss_raw = sorted(df_final.get("StatusTUSS", pd.Series()).dropna().unique().tolist())
+                        _status_tuss_raw = sorted(df_metrics.get("StatusTUSS", pd.Series()).dropna().unique().tolist())
                         _status_tuss_labels = sorted([LABEL_STATUS_TUSS.get(s, s) for s in _status_tuss_raw])
                         _filtro_status_tuss_labels = fcol4.multiselect(
                             "Status TUSS", _status_tuss_labels,
@@ -5170,21 +5264,21 @@ def main():
 
                     # Filtro com máscara booleana — sem copiar o DataFrame inteiro
                     # Seleção vazia = sem filtro (exibe tudo); coerente com placeholder="Todos"
-                    _mask = pd.Series(True, index=df_final.index)
-                    if "Convenio_PRODUCAO" in df_final.columns and filtro_convenio:
-                        _mask &= df_final["Convenio_PRODUCAO"].isin(filtro_convenio)
-                    if "StatusCorrelacao" in df_final.columns and filtro_status:
-                        _mask &= df_final["StatusCorrelacao"].isin(filtro_status)
-                    if "CodigoTUSS_REPASSE" in df_final.columns and filtro_tuss:
-                        _mask &= df_final["CodigoTUSS_REPASSE"].isin(filtro_tuss)
-                    if "StatusTUSS" in df_final.columns and filtro_status_tuss:
-                        _mask &= df_final["StatusTUSS"].isin(filtro_status_tuss)
-                    if "ValorEstimado_TUSS" in df_final.columns and filtro_valor_est != "Todos":
+                    _mask = pd.Series(True, index=df_metrics.index)
+                    if "Convenio_PRODUCAO" in df_metrics.columns and filtro_convenio:
+                        _mask &= df_metrics["Convenio_PRODUCAO"].isin(filtro_convenio)
+                    if "StatusCorrelacao" in df_metrics.columns and filtro_status:
+                        _mask &= df_metrics["StatusCorrelacao"].isin(filtro_status)
+                    if "CodigoTUSS_REPASSE" in df_metrics.columns and filtro_tuss:
+                        _mask &= df_metrics["CodigoTUSS_REPASSE"].isin(filtro_tuss)
+                    if "StatusTUSS" in df_metrics.columns and filtro_status_tuss:
+                        _mask &= df_metrics["StatusTUSS"].isin(filtro_status_tuss)
+                    if "ValorEstimado_TUSS" in df_metrics.columns and filtro_valor_est != "Todos":
                         if filtro_valor_est == "Com Valor":
-                            _mask &= df_final["ValorEstimado_TUSS"].replace("", float("nan")).notna()
+                            _mask &= df_metrics["ValorEstimado_TUSS"].replace("", float("nan")).notna()
                         else:  # Sem Valor
-                            _mask &= df_final["ValorEstimado_TUSS"].replace("", float("nan")).isna()
-                    df_filtrado = df_final[_mask]
+                            _mask &= df_metrics["ValorEstimado_TUSS"].replace("", float("nan")).isna()
+                    df_filtrado = df_metrics[_mask]
                     _n_filtrado = len(df_filtrado)
 
                     # Styling vetorizado (axis=None): ~60× mais rápido que apply(axis=1) por linha
@@ -5334,7 +5428,7 @@ def main():
                     st.divider()
                     if not is_admin():
                         st.caption("🔒 Recarregar dados no Supabase — apenas Admin")
-                    if is_admin() and st.button("🔄 Recarregar Dados no Supabase", type="secondary", help="Descarta dados anteriores e recarrega toda a tabela correlacao_endoscopia"):
+                    if is_admin() and st.button("🔄 Recarregar Dados no Supabase", type="secondary", help="Carregar para a tabela correlacao_endoscopia"):
                         try:
                             from supabase import create_client
 
@@ -5376,8 +5470,9 @@ def main():
                                 lote_novo = datetime.now().strftime("%Y%m%d_%H%M%S")
 
                                 # ── Prepara registros ────────────────────────────────
-                                # Usa df_final (todos os dados, sem filtros de UI) para
-                                # garantir que o CSV completo seja carregado no Supabase.
+                                # Usa df_metrics (df_final já deduplicado) para garantir
+                                # que Streamlit e frontend exibam os mesmos números.
+                                # Duplicatas intra-lote do arquivo fonte já foram removidas.
                                 # O trigger BEFORE INSERT do banco cuida de:
                                 #   • hash_conteudo, is_duplicata, id_original
                                 #   • carry-over de decisao_humana/revisado_em/notas_revisor
@@ -5392,8 +5487,8 @@ def main():
                                     "ativo", "desativado_em", "desativado_por",
                                     "motivo_desativacao", "rollback_operacao_id",
                                 }
-                                _records_raw = df_final \
-                                    .where(df_final.notna(), other=None) \
+                                _records_raw = df_metrics \
+                                    .where(df_metrics.notna(), other=None) \
                                     .to_dict("records")
                                 _DATE_COLS = {"Data_PRODUCAO", "Data_REPASSE"}
 
