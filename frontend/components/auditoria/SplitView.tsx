@@ -56,6 +56,16 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
   const item = items[currentIndex]
   if (!item) return null
 
+  // ── Irmãos do mesmo atendimento (mesmo NrAtendimento_PRODUCAO) ──────────────
+  const nrAtend = item.NrAtendimento_PRODUCAO
+  const encounterSiblings = nrAtend
+    ? items.reduce<Array<{ index: number; item: Correlacao }>>((acc, r, i) => {
+        if (r.NrAtendimento_PRODUCAO === nrAtend) acc.push({ index: i, item: r })
+        return acc
+      }, [])
+    : []
+  const hasEncounter = encounterSiblings.length > 1
+
   const isDivergente = (item.MetodoMatch as string)?.includes('PROCEDIMENTO_DIVERGENTE')
   const isFuzzy = item.MetodoMatch === '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA'
   const isNrAtendimento = item.MetodoMatch === '2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO'
@@ -125,6 +135,50 @@ export function SplitView({ items, currentIndex, onNavigate, onDecision }: Split
           </button>
         </div>
       </div>
+
+      {/* ── Faixa de navegação do atendimento (múltiplos procedimentos) ───── */}
+      {hasEncounter && (
+        <div className="px-5 py-2 border-b border-blue-100 bg-blue-50/40 overflow-x-auto">
+          <div className="flex items-center gap-2 min-w-max">
+            <span className="text-[10px] font-semibold text-blue-500 uppercase tracking-wider flex-shrink-0 whitespace-nowrap">
+              Atend. {nrAtend} · {encounterSiblings.length} proc.
+            </span>
+            <div className="flex items-center gap-1">
+              {encounterSiblings.map(({ index: sibIdx, item: sib }) => {
+                const isCurrent = sibIdx === currentIndex
+                const tussGroup = sib.StatusTUSS?.startsWith('OK_') ? 'ok'
+                  : sib.StatusTUSS?.startsWith('COBRAR_') ? 'cobrar'
+                  : sib.StatusTUSS?.startsWith('CORRELACIONAR_MANUAL_') ? 'manual'
+                  : null
+                return (
+                  <button
+                    key={sib.ChaveCorrelacao}
+                    onClick={() => !isCurrent && onNavigate(sibIdx)}
+                    disabled={isCurrent}
+                    title={sib.Procedimento_PRODUCAO || sib.Procedimento_REPASSE || undefined}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all flex-shrink-0 ${
+                      isCurrent
+                        ? 'bg-blue-600 text-white shadow-sm cursor-default'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-700 cursor-pointer'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                      isCurrent         ? 'bg-white/70'   :
+                      tussGroup === 'ok'     ? 'bg-green-500'  :
+                      tussGroup === 'cobrar' ? 'bg-red-500'    :
+                      tussGroup === 'manual' ? 'bg-yellow-500' :
+                      'bg-gray-400'
+                    }`} />
+                    <span className="max-w-[110px] truncate">
+                      {sib.Procedimento_PRODUCAO || sib.Procedimento_REPASSE || '—'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-3 divide-x divide-gray-200">
         {/* Left: Comparison */}

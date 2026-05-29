@@ -124,7 +124,7 @@ export function DetailPanel({
               {sec.id === 'paciente' && (
                 <div className="pt-3">
                   <PatientContext
-                    nrAtendimento={item.NrAtendimento_PRODUCAO}
+                    nrAtendimento={item.NrAtendimento_PRODUCAO ?? item.NrAtendimento_REPASSE}
                     currentChave={item.ChaveCorrelacao}
                     onSelect={r => onSelectRelated?.(r)}
                   />

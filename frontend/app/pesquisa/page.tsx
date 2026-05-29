@@ -91,6 +91,16 @@ export default function PesquisaPage() {
     [filteredRows, decisions]
   )
 
+  // Contagem de procedimentos por atendimento (para pílula na lista)
+  const atendimentoCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const r of enrichedRows) {
+      const nr = r.NrAtendimento_PRODUCAO
+      if (nr) map.set(nr, (map.get(nr) ?? 0) + 1)
+    }
+    return map
+  }, [enrichedRows])
+
   const handleDecision = (chave: string, decision: DecisaoHumana) => {
     setDecisions(prev => ({ ...prev, [chave]: decision }))
   }
@@ -217,6 +227,8 @@ export default function PesquisaPage() {
               {enrichedRows.map((item, idx) => {
                 const risk = getRiskLevel(item.StatusCorrelacao, item.MetodoMatch)
                 const isSelected = selectedIndex === idx
+                const nrAtend = item.NrAtendimento_PRODUCAO
+                const siblingCount = nrAtend ? (atendimentoCounts.get(nrAtend) ?? 0) : 0
 
                 return (
                   <button
@@ -228,10 +240,17 @@ export default function PesquisaPage() {
                         : 'hover:bg-gray-50'
                     }`}
                   >
-                    {/* Paciente + risco */}
+                    {/* Paciente + pílula de múltiplos proc. + risco */}
                     <div className="flex items-start justify-between gap-2 mb-1">
-                      <span className="text-sm font-medium text-gray-900 truncate leading-snug">
-                        {item.Paciente_PRODUCAO || item.Paciente_REPASSE || '—'}
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-sm font-medium text-gray-900 truncate leading-snug">
+                          {item.Paciente_PRODUCAO || item.Paciente_REPASSE || '—'}
+                        </span>
+                        {siblingCount > 1 && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-semibold flex-shrink-0">
+                            {siblingCount} proc.
+                          </span>
+                        )}
                       </span>
                       {risk && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex-shrink-0 ${
