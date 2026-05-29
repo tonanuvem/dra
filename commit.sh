@@ -3,7 +3,7 @@
 # Obter data e hora de São Paulo
 DATA_HORA=$(TZ='America/Sao_Paulo' date '+%d/%m/%Y %H:%M:%S')
 
-MENSAGEM="Atualização : versao Cargas BD Incrementais: correlacao_endoscopia - $DATA_HORA"
+MENSAGEM="Atualização de versao: Melhorias no Frontend - $DATA_HORA"
 
 echo "Adicionando arquivos..."
 git add .
