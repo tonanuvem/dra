@@ -36,7 +36,7 @@ export const ROLE_COLORS: Record<Role, string> = {
 
 /** Rotas que exigem cada permissão (para guard de navegação) */
 export const PROTECTED_ROUTES: Record<keyof Permissions, string[]> = {
-  canEdit:          [],                   // sem restrição de rota (só botões ficam ocultos)
+  canEdit:          ['/mapeamentos-tuss'], // redireciona para /dashboard se visualizador
   canViewFinancial: ['/faturamento'],      // redireciona para /dashboard se não tem acesso
   canManageUsers:   ['/configuracoes'],   // redireciona para /dashboard se não é admin
 }
