@@ -10,25 +10,24 @@ import { formatDate, getRiskLevel, needsHumanReview } from '@/lib/utils'
 import type { Correlacao, DecisaoHumana, StatusCorrelacao, MetodoMatch } from '@/lib/types'
 import { AlertTriangle, Search, Filter, Loader2, ClipboardList } from 'lucide-react'
 
-type FiltroType = 'todos' | 'divergente' | 'fallback' | 'glosa_total' | 'glosa_parcial' | 'nao_revisado'
+type FiltroType = 'todos' | 'divergente' | 'revisao_nomes' | 'nao_revisado'
 
 const FILTRO_LABELS: Record<FiltroType, string> = {
-  todos: 'Todos',
-  divergente: 'Proc. Divergente',
-  fallback: 'Match Incerto',
-  glosa_total: 'Glosa Total',
-  glosa_parcial: 'Glosa Parcial',
-  nao_revisado: 'Não Revisados',
+  todos:         'Todos',
+  divergente:    'Proc. Divergente',
+  revisao_nomes: 'Revisão de Nomes e Datas',
+  nao_revisado:  'Não Revisados',
 }
 
 function AuditoriaContent() {
   const searchParams = useSearchParams()
-  const filtroParam = (searchParams.get('filtro') ?? 'nao_revisado') as FiltroType
+  const rawParam = searchParams.get('filtro') ?? 'nao_revisado'
+  // compatibilidade com link antigo ?filtro=fallback
+  const filtroParam = (rawParam === 'fallback' ? 'revisao_nomes' : rawParam) as FiltroType
   const [filtro, setFiltro] = useState<FiltroType>(filtroParam)
   const [search, setSearch] = useState('')
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
 
-  // Build filter for hook
   const filterConfig = useMemo(() => {
     const statusMap: Record<FiltroType, { statusCorrelacao?: StatusCorrelacao[]; metodoMatch?: MetodoMatch[]; loadAll?: boolean }> = {
       todos: {},
@@ -38,38 +37,25 @@ function AuditoriaContent() {
         '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA_PROCEDIMENTO_DIVERGENTE',
         '4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL_PROCEDIMENTO_DIVERGENTE',
       ]},
-      fallback: { metodoMatch: [
+      revisao_nomes: { metodoMatch: [
         '2_FALLBACK_NR-ATENDIMENTO_DATA_PROCEDIMENTO',
         '3_FALLBACK_NOME_PARCIAL_FUZZY_DATA_FIXA',
         '4_FALLBACK_NOME_COMPLETO_DATA-FLEXIVEL',
       ]},
-      // glosa: filtra CORRELACIONADO server-side, refina por valor client-side
-      glosa_total:  { statusCorrelacao: ['CORRELACIONADO'], loadAll: true },
-      glosa_parcial: { statusCorrelacao: ['CORRELACIONADO'], loadAll: true },
       nao_revisado: {},
     }
     return {
       ...statusMap[filtro],
       pendentesRevisao: filtro === 'nao_revisado',
       search: search || undefined,
-      // glosa usa loadAll:true (definido no statusMap), então não precisa de limit
-      limit: (filtro === 'glosa_total' || filtro === 'glosa_parcial') ? undefined : 500,
+      limit: 500,
     }
   }, [filtro, search])
 
   const { data, total, loading } = useCorrelacoes(filterConfig)
 
-  // Client-side filtering for tabs that can't be filtered server-side
   const filteredData = useMemo(() => {
     if (filtro === 'nao_revisado') return data.filter(r => needsHumanReview(r))
-    if (filtro === 'glosa_total') return data.filter(r =>
-      Number(r.ValorLiberado_REPASSE ?? 0) === 0 && Number(r.ValorEstimado_TUSS ?? 0) > 0
-    )
-    if (filtro === 'glosa_parcial') return data.filter(r => {
-      const rep = Number(r.ValorLiberado_REPASSE ?? 0)
-      const est = Number(r.ValorEstimado_TUSS ?? 0)
-      return est > 0 && rep > 0 && rep < est * 0.95
-    })
     return data
   }, [data, filtro])
 

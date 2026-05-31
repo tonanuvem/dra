@@ -119,8 +119,6 @@ export function useDashboardStats() {
     naoFaturados: 0,
     repasseNaoIdentificado: 0,
     repasseForaPeriodo: 0,
-    glosaTotal: 0,
-    glosaParci: 0,
     procedimentoDivergente: 0,
     pendentesRevisao: 0,
     valorRecuperar: 0,
@@ -130,8 +128,15 @@ export function useDashboardStats() {
     tussCobrarNaoFaturados: 0,
     tussManual: 0,
     tussStatusDistribution: [] as { status: string; total: number; valor: number; valorPago: number }[],
+    // ── Filas de trabalho ──────────────────────────────────────────────
+    /** Fila 3 (Financeiro): COBRAR_TUSS_* com ValorEstimado calculável */
+    faturamentoCobrarComValor: 0,
+    /** Fila 4 (Financeiro): CORRELACIONADO + valor pago aberrante + StatusTUSS = OK_* ou null */
+    glosasContestacao: 0,
+    /** Fila 5 (Financeiro): sem código TUSS definido (lookup incompleto + CORRELACIONAR_MANUAL) */
+    lacunasMapeamento: 0,
+    /** Fila 6 (Financeiro): código TUSS identificado mas sem histórico de preço */
     tussCodigoSemHistorico: 0,
-    tussMapeamentoSemCodigo: 0,
   })
   const [loading, setLoading] = useState(true)
 
@@ -167,14 +172,16 @@ export function useDashboardStats() {
         if (allRows.length === 0) return
 
         const byStatus: Record<string, { count: number; valor: number; valorPago: number }> = {}
-        let pendentesRevisao         = 0
-        let valorRecuperar           = 0
-        let tussCodigoSemHistorico   = 0
-        let tussMapeamentoSemCodigo  = 0
-        let tussOk                   = 0
+        let pendentesRevisao          = 0
+        let valorRecuperar            = 0
+        let tussCodigoSemHistorico    = 0
+        let lacunasMapeamento         = 0
+        let faturamentoCobrarComValor = 0
+        let glosasContestacao         = 0
+        let tussOk                    = 0
         let tussCobrarCorrelacionados = 0
         let tussCobrarNaoFaturados    = 0
-        let tussManual               = 0
+        let tussManual                = 0
 
         // StatusTUSS que geram recuperação financeira ativa (mesmos da aba Faturamento)
         const RECOVERY_TUSS = new Set([
@@ -183,6 +190,9 @@ export function useDashboardStats() {
           'COBRAR_TUSS_NAO_FATURADO_MAPEADO',
           'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE',
         ])
+
+        // StatusTUSS que vão para Faturamento (superset, inclui DIVERGENTE)
+        const COBRAR_TUSS = new Set([...RECOVERY_TUSS, 'COBRAR_TUSS_CODIGO_PRINCIPAL_DIVERGENTE'])
 
         for (const row of allRows) {
           const s = row.StatusCorrelacao ?? 'DESCONHECIDO'
@@ -227,20 +237,39 @@ export function useDashboardStats() {
             tussManual++
           }
 
-          // ── Filas TUSS: apenas NAO_FATURADO_NO_REPASSE + COBRAR_TUSS_NAO_FATURADO_MAPEADO sem valor
-          const isNaoFaturadoMapeado =
+          // ── Fila 3: COBRAR_* com valor estimado calculável ──────────────
+          if (st && COBRAR_TUSS.has(st) && row.ValorEstimado_TUSS != null) {
+            faturamentoCobrarComValor++
+          }
+
+          // ── Fila 4: Glosas puras (OK_TUSS_* ou sem status + valor aberrante) ─
+          if (sc === 'CORRELACIONADO' && (st === '' || st.startsWith('OK_'))) {
+            const rep = Number(row.ValorLiberado_REPASSE ?? 0)
+            const est = Number(row.ValorEstimado_TUSS   ?? 0)
+            if ((rep === 0 && est > 0) || (rep > 0 && est > 0 && rep < est * 0.95)) {
+              glosasContestacao++
+            }
+          }
+
+          // ── Filas 5 e 6: sub-casos de NAO_FATURADO + COBRAR_NAO_FATURADO_MAPEADO ─
+          const isNaoFaturadoMapeadoSemValor =
             row.StatusCorrelacao === 'NAO_FATURADO_NO_REPASSE' &&
             row.StatusTUSS       === 'COBRAR_TUSS_NAO_FATURADO_MAPEADO' &&
             row.ValorEstimado_TUSS == null
 
-          if (isNaoFaturadoMapeado) {
+          if (isNaoFaturadoMapeadoSemValor) {
             const codigos = (row.CodigosTUSS_Esperados ?? '').trim()
             const temCodigo = codigos !== '' && codigos.toLowerCase() !== 'nan'
             if (temCodigo) {
-              tussCodigoSemHistorico++   // código existe, mas sem histórico de preço
+              tussCodigoSemHistorico++  // Fila 6: código existe, mas sem histórico de preço
             } else {
-              tussMapeamentoSemCodigo++  // mapeamento incompleto: código ausente
+              lacunasMapeamento++       // Fila 5 (parte): mapeamento incompleto — código ausente
             }
+          }
+
+          // ── Fila 5 (parte): combinação sem mapeamento na lookup ──────────
+          if (st === 'CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO') {
+            lacunasMapeamento++
           }
         }
 
@@ -260,17 +289,6 @@ export function useDashboardStats() {
           naoFaturados: byStatus['NAO_FATURADO_NO_REPASSE']?.count ?? 0,
           repasseNaoIdentificado: byStatus['REPASSE_NAO_IDENTIFICADO_NA_PRODUCAO']?.count ?? 0,
           repasseForaPeriodo: byStatus['REPASSE_DATA_FORA_DO_PERIODO_PRODUCAO']?.count ?? 0,
-          glosaTotal: allRows.filter(r =>
-            r.StatusCorrelacao === 'CORRELACIONADO' &&
-            Number(r.ValorLiberado_REPASSE ?? 0) === 0 &&
-            Number(r.ValorEstimado_TUSS ?? 0) > 0
-          ).length,
-          glosaParci: allRows.filter(r => {
-            if (r.StatusCorrelacao !== 'CORRELACIONADO') return false
-            const rep = Number(r.ValorLiberado_REPASSE ?? 0)
-            const est = Number(r.ValorEstimado_TUSS ?? 0)
-            return est > 0 && rep > 0 && rep < est * 0.95
-          }).length,
           procedimentoDivergente: allRows.filter(r =>
             (r.MetodoMatch as string)?.includes('PROCEDIMENTO_DIVERGENTE')
           ).length,
@@ -282,8 +300,10 @@ export function useDashboardStats() {
           tussCobrarNaoFaturados,
           tussManual,
           tussStatusDistribution,
+          faturamentoCobrarComValor,
+          glosasContestacao,
+          lacunasMapeamento,
           tussCodigoSemHistorico,
-          tussMapeamentoSemCodigo,
         })
       } finally {
         setLoading(false)

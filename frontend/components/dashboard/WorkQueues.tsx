@@ -1,5 +1,9 @@
 import Link from 'next/link'
-import { AlertTriangle, UserX, Clock, Search, ArrowRight, Tag, FileQuestion } from 'lucide-react'
+import {
+  AlertTriangle, UserX, ArrowRight, Tag, FileQuestion,
+  DollarSign, GitMerge, BadgeDollarSign, User, Landmark,
+} from 'lucide-react'
+import type { Role } from '@/lib/permissions'
 
 interface WorkQueueItem {
   title: string
@@ -8,19 +12,22 @@ interface WorkQueueItem {
   href: string
   icon: React.ReactNode
   priority: 'alta' | 'media' | 'baixa'
+  /** Perfil responsável pela fila */
+  profile: 'editor' | 'financeiro'
+  /** Texto exibido no tooltip técnico (hover) */
+  hint: string
 }
 
 interface WorkQueuesProps {
   stats: {
-    procedimentoDivergente:  number
-    pendentesRevisao:        number
-    glosaTotal:              number
-    glosaParci:              number
-    tussCodigoSemHistorico:  number   // Causa 1+3: código mapeado sem preço histórico
-    tussMapeamentoSemCodigo: number   // Causa 2: mapeamento sem código TUSS definido
+    procedimentoDivergente:   number
+    pendentesRevisao:         number
+    faturamentoCobrarComValor: number
+    glosasContestacao:        number
+    lacunasMapeamento:        number
+    tussCodigoSemHistorico:   number
   }
-  /** Exibe itens financeiros (links para Faturamento). false para visualizador/editor */
-  showFinancial?: boolean
+  role?: Role | null
 }
 
 const priorityConfig = {
@@ -29,67 +36,88 @@ const priorityConfig = {
   baixa: { card: 'border-yellow-200 bg-yellow-50 hover:bg-yellow-100', dot: 'bg-yellow-500', badge: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
 }
 
-export function WorkQueues({ stats, showFinancial = true }: WorkQueuesProps) {
-  // Itens que apontam para /faturamento só são exibidos para financeiro/admin
-  const FINANCIAL_HREFS = ['/faturamento', '/faturamento?tab=downgrade']
+const profileConfig = {
+  editor:     { label: 'Editor',     cls: 'bg-yellow-100 text-yellow-800 border-yellow-200', icon: <User className="w-3 h-3" /> },
+  financeiro: { label: 'Financeiro', cls: 'bg-blue-100 text-blue-800 border-blue-200',       icon: <Landmark className="w-3 h-3" /> },
+}
 
+export function WorkQueues({ stats, role }: WorkQueuesProps) {
   const allQueues: WorkQueueItem[] = [
-    // ── Alta prioridade ──────────────────────────────────────────────
+    // ── Editor — Auditoria ──────────────────────────────────────────────
     {
-      title:       'Mapeamento TUSS Incompleto',
-      count:       stats.tussMapeamentoSemCodigo,
-      description: 'Procedimentos não repassados sem código TUSS definido na tabela de mapeamento — corrigir para viabilizar recuperação',
-      href:        '/configuracoes',
-      icon:        <FileQuestion className="w-4 h-4" />,
-      priority:    'alta',
-    },
-    {
-      title:       'Procedimentos Anatomicamente Divergentes',
+      title:       'Auditoria — Proc. Anatomicamente Divergentes',
       count:       stats.procedimentoDivergente,
       description: 'Endoscopia correlacionada com Colonoscopia — risco alto de falso positivo',
       href:        '/auditoria?filtro=divergente',
       icon:        <AlertTriangle className="w-4 h-4" />,
       priority:    'alta',
+      profile:     'editor',
+      hint:        'MetodoMatch com sufixo _PROCEDIMENTO_DIVERGENTE',
     },
-    // ── Média prioridade ─────────────────────────────────────────────
     {
-      title:       'Revisão de Nomes e Datas',
+      title:       'Auditoria — Revisão de Nomes e Datas',
       count:       stats.pendentesRevisao,
       description: 'Matches por fuzzy, data flexível ou nº atendimento — requer confirmação humana',
-      href:        '/auditoria?filtro=fallback',
+      href:        '/auditoria?filtro=revisao_nomes',
       icon:        <UserX className="w-4 h-4" />,
       priority:    'media',
+      profile:     'editor',
+      hint:        'MetodoMatch com 2_FALLBACK_NR-ATENDIMENTO, 3_FALLBACK_NOME_PARCIAL ou 4_FALLBACK_NOME_COMPLETO',
+    },
+    // ── Financeiro — Faturamento ────────────────────────────────────────
+    {
+      title:       'Faturamento — Cobranças a Recuperar',
+      count:       stats.faturamentoCobrarComValor,
+      description: 'Procedimentos com valor TUSS estimado — prontos para gerar formulário de cobrança',
+      href:        '/faturamento',
+      icon:        <BadgeDollarSign className="w-4 h-4" />,
+      priority:    'alta',
+      profile:     'financeiro',
+      hint:        'StatusTUSS = COBRAR_TUSS_* com ValorEstimado_TUSS calculável',
     },
     {
-      title:       'Códigos TUSS sem Valor de Referência',
+      title:       'Faturamento — Glosas a Contestar',
+      count:       stats.glosasContestacao,
+      description: 'Correlacionados com código correto mas valor pago zero ou abaixo do esperado',
+      href:        '/faturamento?tab=glosas',
+      icon:        <DollarSign className="w-4 h-4" />,
+      priority:    'media',
+      profile:     'financeiro',
+      hint:        'StatusCorrelacao = CORRELACIONADO + ValorLiberado aberrante + StatusTUSS = OK_* ou nulo',
+    },
+    // ── Financeiro — TUSS ───────────────────────────────────────────────
+    {
+      title:       'TUSS — Lacunas de Mapeamento',
+      count:       stats.lacunasMapeamento,
+      description: 'Procedimentos sem código TUSS definido — corrigir para viabilizar recuperação',
+      href:        '/mapeamentos-tuss',
+      icon:        <GitMerge className="w-4 h-4" />,
+      priority:    'alta',
+      profile:     'financeiro',
+      hint:        'StatusTUSS = CORRELACIONAR_MANUAL_TUSS_COMBINACAO_SEM_MAPEAMENTO ou CodigosTUSS_Esperados vazio',
+    },
+    {
+      title:       'TUSS — Códigos sem Histórico de Preço',
       count:       stats.tussCodigoSemHistorico,
-      description: 'Procedimentos não repassados com código TUSS identificado mas sem histórico de preço — valor de recuperação não estimável',
-      href:        '/faturamento',
+      description: 'Código TUSS identificado mas sem preço histórico cadastrado — valor de recuperação não estimável',
+      href:        '/faturamento?tab=sem_historico',
       icon:        <Tag className="w-4 h-4" />,
       priority:    'media',
-    },
-    {
-      title:       'Glosas Totais',
-      count:       stats.glosaTotal,
-      description: 'Procedimentos correlacionados com valor liberado = zero',
-      href:        '/auditoria?filtro=glosa_total',
-      icon:        <Clock className="w-4 h-4" />,
-      priority:    'media',
-    },
-    // ── Baixa prioridade ─────────────────────────────────────────────
-    {
-      title:       'Glosas Parciais',
-      count:       stats.glosaParci,
-      description: 'Valor pago inferior ao estimado — verificar divergência de código',
-      href:        '/faturamento?tab=downgrade',
-      icon:        <Search className="w-4 h-4" />,
-      priority:    'baixa',
+      profile:     'financeiro',
+      hint:        'StatusTUSS = COBRAR_TUSS_NAO_FATURADO_MAPEADO com CodigosTUSS_Esperados preenchido mas ValorEstimado_TUSS nulo',
     },
   ]
 
-  const queues = showFinancial
-    ? allQueues
-    : allQueues.filter(q => !FINANCIAL_HREFS.includes(q.href))
+  // Filtra filas por perfil do usuário
+  const queues = allQueues.filter(q => {
+    if (!role || role === 'admin')      return true
+    if (role === 'financeiro')          return true          // vê tudo
+    if (role === 'editor')              return q.profile === 'editor'
+    // visualizador vê as filas de editor (somente leitura)
+    return q.profile === 'editor'
+  })
+
+  if (queues.length === 0) return null
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-5 flex flex-col gap-4">
@@ -97,11 +125,14 @@ export function WorkQueues({ stats, showFinancial = true }: WorkQueuesProps) {
 
       <div className="flex flex-col gap-2">
         {queues.map((q) => {
-          const cfg = priorityConfig[q.priority]
+          const cfg  = priorityConfig[q.priority]
+          const prof = profileConfig[q.profile]
           return (
             <Link key={q.href + q.title} href={q.href}>
-              <div className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${cfg.card}`}>
-
+              <div
+                className={`flex items-start gap-3 p-3 rounded-lg border transition-colors cursor-pointer ${cfg.card}`}
+                title={q.hint}
+              >
                 {/* Dot prioridade */}
                 <span className={`mt-1.5 w-2 h-2 rounded-full flex-shrink-0 ${cfg.dot}`} />
 
@@ -116,6 +147,11 @@ export function WorkQueues({ stats, showFinancial = true }: WorkQueuesProps) {
                   <p className="text-xs text-gray-500 mt-0.5 leading-snug sm:line-clamp-1">
                     {q.description}
                   </p>
+                  {/* Badge de perfil responsável */}
+                  <span className={`inline-flex items-center gap-1 mt-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${prof.cls}`}>
+                    {prof.icon}
+                    {prof.label}
+                  </span>
                 </div>
 
                 <ArrowRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />

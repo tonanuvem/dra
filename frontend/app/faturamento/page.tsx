@@ -15,15 +15,19 @@ import * as XLSX from 'xlsx'
 // ─────────────────────────────────────────────────────────
 // Tipos e configuração das abas
 // ─────────────────────────────────────────────────────────
-type TabType = 'todos' | 'downgrade' | 'ausente' | 'nao_faturado'
+type TabType = 'todos' | 'downgrade' | 'ausente' | 'nao_faturado' | 'glosas' | 'sem_historico'
+
+type TabFilterMode = 'statusTUSS' | 'glosas' | 'sem_historico'
 
 const TAB_CONFIG: Record<TabType, {
   label: string
-  statusTUSS: string[]
   description: string
+  filterMode: TabFilterMode
+  statusTUSS?: string[]
 }> = {
   todos: {
     label: '📋 Todos',
+    filterMode: 'statusTUSS',
     statusTUSS: [
       'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
       'COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE',
@@ -34,6 +38,7 @@ const TAB_CONFIG: Record<TabType, {
   },
   downgrade: {
     label: '🔴 Cobrado Como Simples',
+    filterMode: 'statusTUSS',
     statusTUSS: [
       'COBRAR_TUSS_PROC_ADICIONAL_COBRADO_COMO_SIMPLES',
       'COBRAR_TUSS_CODIGO_PRINCIPAL_DOWNGRADE',
@@ -42,13 +47,25 @@ const TAB_CONFIG: Record<TabType, {
   },
   ausente: {
     label: '🟠 Código Adicional Ausente',
+    filterMode: 'statusTUSS',
     statusTUSS: ['COBRAR_TUSS_CODIGO_ADICIONAL_AUSENTE_NO_REPASSE'],
     description: 'Código adicional não faturado separadamente',
   },
   nao_faturado: {
     label: '❌ Não Faturados',
+    filterMode: 'statusTUSS',
     statusTUSS: ['COBRAR_TUSS_NAO_FATURADO_MAPEADO'],
-    description: 'Procedimento inteiro sem pagamento no repasse',
+    description: 'Procedimento não faturado com código TUSS identificado e valor estimado disponível',
+  },
+  glosas: {
+    label: '⚪ Glosas a Contestar',
+    filterMode: 'glosas',
+    description: 'Correlacionados com código correto mas valor pago zero ou abaixo do esperado — contestação administrativa',
+  },
+  sem_historico: {
+    label: '🔵 Sem Histórico de Preço',
+    filterMode: 'sem_historico',
+    description: 'Código TUSS identificado mas sem preço histórico cadastrado — valor de recuperação não estimável',
   },
 }
 
@@ -312,14 +329,52 @@ function FaturamentoContent() {
   const [includeNegative, setIncludeNegative] = useState(false)
   const [detailIndex, setDetailIndex]     = useState<number | null>(null)
 
-  const { data, loading } = useCorrelacoes({
-    statusTUSS: [...TAB_CONFIG[activeTab].statusTUSS] as any[],
-    loadAll: true,   // carrega todos os registros em batches — sem truncar em 1000
-  })
+  const cfg = TAB_CONFIG[activeTab]
+
+  // Monta filtro para o hook com base no modo da aba
+  const hookFilter = useMemo(() => {
+    if (cfg.filterMode === 'statusTUSS') {
+      return { statusTUSS: [...(cfg.statusTUSS ?? [])] as any[], loadAll: true }
+    }
+    if (cfg.filterMode === 'glosas') {
+      // Carrega todos CORRELACIONADO e filtra client-side por valor aberrante
+      return { statusCorrelacao: ['CORRELACIONADO'] as any[], loadAll: true }
+    }
+    // sem_historico: carrega COBRAR_TUSS_NAO_FATURADO_MAPEADO e filtra client-side
+    return { statusTUSS: ['COBRAR_TUSS_NAO_FATURADO_MAPEADO'] as any[], loadAll: true }
+  }, [activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: rawData, loading } = useCorrelacoes(hookFilter)
+
+  // Filtragem client-side para abas que precisam de lógica de valor
+  const filteredRaw = useMemo(() => {
+    if (cfg.filterMode === 'glosas') {
+      return rawData.filter(r => {
+        const st = r.StatusTUSS ?? ''
+        if (!st.startsWith('OK_') && st !== '') return false
+        const rep = Number(r.ValorLiberado_REPASSE ?? 0)
+        const est = Number(r.ValorEstimado_TUSS   ?? 0)
+        return (rep === 0 && est > 0) || (rep > 0 && est > 0 && rep < est * 0.95)
+      })
+    }
+    if (cfg.filterMode === 'sem_historico') {
+      return rawData.filter(r => {
+        if (r.ValorEstimado_TUSS != null) return false
+        const cod = (r.CodigosTUSS_Esperados ?? '').trim()
+        return cod !== '' && cod.toLowerCase() !== 'nan'
+      })
+    }
+    // Para abas statusTUSS: filtra registros sem ValorEstimado para manter somente
+    // os que têm valor calculável (os sem valor vão para a aba sem_historico)
+    if (activeTab === 'nao_faturado' || activeTab === 'todos') {
+      return rawData.filter(r => r.ValorEstimado_TUSS != null)
+    }
+    return rawData
+  }, [rawData, activeTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const processedData: ProcessedRow[] = useMemo(() => (
-    data.map(row => ({ ...row, valorRecuperar: calcularValorRecuperar(row, activeTab) }))
-  ), [data, activeTab])
+    filteredRaw.map(row => ({ ...row, valorRecuperar: calcularValorRecuperar(row, activeTab) }))
+  ), [filteredRaw, activeTab])
 
   // Auto-seleção: exclui negativos e nulos por padrão
   useMemo(() => {
@@ -430,6 +485,32 @@ function FaturamentoContent() {
         </div>
 
         <p className="text-sm text-gray-500">{TAB_CONFIG[activeTab].description}</p>
+
+        {/* ── Nota informativa para aba Glosas ── */}
+        {activeTab === 'glosas' && (
+          <div className="flex items-start gap-2.5 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-xs text-gray-600">
+            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-400" />
+            <span>
+              <strong>Glosas a Contestar —</strong>{' '}
+              são procedimentos correlacionados com código TUSS correto (OK_TUSS_*) mas cujo valor pago pelo convênio
+              foi zero ou inferior ao esperado. Diferente das cobranças de código incorreto, aqui o código está certo
+              e a contestação é administrativa junto ao convênio.
+            </span>
+          </div>
+        )}
+
+        {/* ── Nota informativa para aba Sem Histórico ── */}
+        {activeTab === 'sem_historico' && (
+          <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">
+            <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-blue-500" />
+            <span>
+              <strong>Sem Histórico de Preço —</strong>{' '}
+              o código TUSS foi identificado mas não há valor de referência cadastrado na tabela histórica.
+              O valor a recuperar não pode ser estimado. Para resolver, cadastre o preço histórico para esses códigos
+              e reprocesse a correlação.
+            </span>
+          </div>
+        )}
 
         {/* ── Nota de cálculo: delta para "Cobrado Como Simples" ── */}
         {(activeTab === 'downgrade' || activeTab === 'todos') && (
@@ -649,7 +730,7 @@ function calcularValorRecuperar(row: Correlacao, tab: TabType): number | null {
       if (estimado == null) return null
       return estimado - recebido
     }
-    return estimado // ausente + nao_faturado: valor total a recuperar é o estimado
+    return estimado
   }
   if (tab === 'downgrade') {
     if (estimado == null) return null
@@ -657,6 +738,12 @@ function calcularValorRecuperar(row: Correlacao, tab: TabType): number | null {
   }
   if (tab === 'ausente')      return estimado
   if (tab === 'nao_faturado') return estimado
+  if (tab === 'glosas') {
+    // Diferença entre estimado e recebido (se recebido=0, retorna estimado inteiro)
+    if (estimado == null) return null
+    return Math.max(0, estimado - recebido)
+  }
+  if (tab === 'sem_historico') return null  // valor não estimável
   return null
 }
 

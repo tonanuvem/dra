@@ -13,7 +13,7 @@ import {
 
 export default function DashboardPage() {
   const { stats, loading } = useDashboardStats()
-  const { permissions } = useAuth()
+  const { permissions, role } = useAuth()
   const canFinancial = permissions?.canViewFinancial ?? false
 
   const pct = (n: number) =>
@@ -135,7 +135,7 @@ export default function DashboardPage() {
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-5 h-64 animate-pulse" />
       ) : (
-        <WorkQueues stats={stats} showFinancial={canFinancial} />
+        <WorkQueues stats={stats} role={role} />
       )}
 
       {/* ── SEÇÃO 4: Análises Gráficas ────────────────────────────────────── */}
