@@ -26,6 +26,7 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 -- 2. VIEW
 -- ─────────────────────────────────────────────────────────────
 
+DROP VIEW IF EXISTS public.correlacao_endoscopia_com_tipo;
 DROP VIEW IF EXISTS public.user_profiles_view;
 
 

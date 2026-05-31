@@ -500,6 +500,62 @@ $$;
 
 
 -- ============================================================
+--  VIEW: correlacao_endoscopia_com_tipo
+-- ============================================================
+--  Expõe todos os campos de correlacao_endoscopia enriquecidos
+--  com TipoCobranca da tuss_lookup_table, via JOIN pela chave
+--  normalizada (mesma lógica de _normalizar_chave_tuss no Python).
+--
+--  Movida para cá (script 3) pois depende de correlacao_endoscopia,
+--  que só existe a partir deste script.
+--  Idempotente: CREATE OR REPLACE não requer DROP prévio.
+-- ─────────────────────────────────────────────────────────────
+
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
+CREATE OR REPLACE VIEW public.correlacao_endoscopia_com_tipo AS
+SELECT
+  c.*,
+  t."TipoCobranca"
+FROM public.correlacao_endoscopia c
+LEFT JOIN public.tuss_lookup_table t
+  ON t.chave_norm = (
+    regexp_replace(
+      regexp_replace(
+        regexp_replace(
+          upper(trim(
+            unaccent(
+              coalesce(c."Procedimento_PRODUCAO", '') ||
+              '_' ||
+              coalesce(c."ProcedimentosAdicionais_PRODUCAO", '')
+            )
+          )),
+          '[+/;,]+', '+', 'g'
+        ),
+        '\s*\+\s*', '+', 'g'
+      ),
+      '\s+', ' ', 'g'
+    )
+  );
+
+GRANT SELECT ON public.correlacao_endoscopia_com_tipo TO authenticated;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.views
+    WHERE table_schema = 'public'
+      AND table_name   = 'correlacao_endoscopia_com_tipo'
+  ) THEN
+    RAISE NOTICE 'View correlacao_endoscopia_com_tipo ... OK ✓';
+  ELSE
+    RAISE WARNING 'View correlacao_endoscopia_com_tipo NÃO foi criada! ✗';
+  END IF;
+END;
+$$;
+
+
+-- ============================================================
 --  RESUMO
 -- ============================================================
 --
