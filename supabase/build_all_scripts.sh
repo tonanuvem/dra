@@ -1,5 +1,5 @@
 #!/bin/bash
-# Concatena os scripts 1 ao 4 em um único arquivo SQL.
+# Concatena os scripts 1 ao 5 em um único arquivo SQL.
 # Uso: ./build_all_scripts.sh
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -10,6 +10,7 @@ scripts=(
   "2_tuss-lookup-migration.sql"
   "3_correlacao-migration.sql"
   "4_rollback-migration.sql"
+  "5_valores-tuss-migration.sql"
 )
 
 > "$OUTPUT"
