@@ -32,6 +32,7 @@ DROP VIEW IF EXISTS public.user_profiles_view;
 -- ─────────────────────────────────────────────────────────────
 -- 3. TABELAS (ordem respeita as FKs)
 --
+--    valores_tuss         (sem FKs externas)
 --    lotes_carga          → operacoes_rollback
 --    correlacao_endoscopia → operacoes_rollback, auth.users
 --    operacoes_rollback   → auth.users
@@ -39,21 +40,25 @@ DROP VIEW IF EXISTS public.user_profiles_view;
 --    profiles             → auth.users
 -- ─────────────────────────────────────────────────────────────
 
-DROP TABLE IF EXISTS public.lotes_carga           CASCADE;
-DROP TABLE IF EXISTS public.correlacao_endoscopia CASCADE;
-DROP TABLE IF EXISTS public.operacoes_rollback     CASCADE;
-DROP TABLE IF EXISTS public.tuss_lookup_table      CASCADE;
-DROP TABLE IF EXISTS public.profiles               CASCADE;
+DROP TABLE IF EXISTS public.valores_tuss           CASCADE;
+DROP TABLE IF EXISTS public.lotes_carga            CASCADE;
+DROP TABLE IF EXISTS public.correlacao_endoscopia  CASCADE;
+DROP TABLE IF EXISTS public.operacoes_rollback      CASCADE;
+DROP TABLE IF EXISTS public.tuss_lookup_table       CASCADE;
+DROP TABLE IF EXISTS public.profiles                CASCADE;
 
 
 -- ─────────────────────────────────────────────────────────────
 -- 4. FUNÇÕES
 -- ─────────────────────────────────────────────────────────────
 
-DROP FUNCTION IF EXISTS public.handle_new_user()       CASCADE;
-DROP FUNCTION IF EXISTS public.get_my_role()           CASCADE;
-DROP FUNCTION IF EXISTS public.get_email_by_cpf(TEXT)  CASCADE;
-DROP FUNCTION IF EXISTS public.touch_updated_at()      CASCADE;
+DROP FUNCTION IF EXISTS public.handle_new_user()                CASCADE;
+DROP FUNCTION IF EXISTS public.get_my_role()                    CASCADE;
+DROP FUNCTION IF EXISTS public.get_email_by_cpf(TEXT)           CASCADE;
+DROP FUNCTION IF EXISTS public.touch_updated_at()               CASCADE;
+DROP FUNCTION IF EXISTS public.enrich_correlacao_on_insert()    CASCADE;
+DROP FUNCTION IF EXISTS public.touch_revisado_em()              CASCADE;
+DROP FUNCTION IF EXISTS public.enrich_valores_tuss_on_insert()  CASCADE;
 
 
 -- ─────────────────────────────────────────────────────────────
@@ -82,7 +87,8 @@ BEGIN
   WHERE table_schema = 'public'
     AND table_name IN (
       'profiles', 'tuss_lookup_table',
-      'correlacao_endoscopia', 'operacoes_rollback', 'lotes_carga'
+      'correlacao_endoscopia', 'operacoes_rollback',
+      'lotes_carga', 'valores_tuss'
     );
 
   SELECT COUNT(*) INTO v_usuarios FROM auth.users;
@@ -90,7 +96,11 @@ BEGIN
   SELECT COUNT(*) INTO v_funcoes
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
   WHERE n.nspname = 'public'
-    AND p.proname IN ('handle_new_user', 'get_my_role', 'touch_updated_at');
+    AND p.proname IN (
+      'handle_new_user', 'get_my_role', 'touch_updated_at',
+      'enrich_correlacao_on_insert', 'touch_revisado_em',
+      'enrich_valores_tuss_on_insert'
+    );
 
   RAISE NOTICE '=== Limpeza concluída ===';
   RAISE NOTICE 'Tabelas restantes  : % (esperado: 0)', v_tabelas;
@@ -100,7 +110,7 @@ BEGIN
   IF v_tabelas > 0 OR v_funcoes > 0 THEN
     RAISE WARNING 'Alguns objetos não foram removidos. Verifique acima.';
   ELSE
-    RAISE NOTICE '✓ Banco limpo — pode executar os scripts 1 a 4.';
+    RAISE NOTICE '✓ Banco limpo — pode executar os scripts 1 a 5 (ou _all_config_db_scripts.sql).';
   END IF;
   RAISE NOTICE '=========================';
 END;
