@@ -107,6 +107,25 @@ export interface Correlacao {
   notas_revisor: string | null
 }
 
+export interface ValorTUSS {
+  id: string
+  lote_processamento: string
+  hash_conteudo: string
+  is_duplicata: boolean
+  id_original: string | null
+  criado_em: string
+  Ano: number
+  Mes: number
+  Convenio: string
+  CodigoTUSS: string
+  Descricao: string | null
+  Qtd: number | null
+  Media: number | null
+  UltimoValor: number | null
+  DataUltimo: string | null
+  Confianca: string | null
+}
+
 export interface TussMapeamento {
   id: string
   procedimento_combinacao: string

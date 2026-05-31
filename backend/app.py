@@ -4205,10 +4205,11 @@ def main():
         """)
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab1, tab2, tab3, tab4, tab_cobranca, tab_agents = st.tabs([
+    tab1, tab2, tab3, tab_valores, tab4, tab_cobranca, tab_agents = st.tabs([
         "📄 Input",
         "🚀 Execução",
         "📊 Resultados",
+        "💰 Valores TUSS",
         "🔀 Correlação",
         "📋 Gerar Cobrança",
         "🤖 Agentes",
@@ -4574,6 +4575,161 @@ def main():
                     mime="text/csv",
                     type="primary",
                 )
+
+    # ── TAB VALORES TUSS ──────────────────────────────────────────────────────
+    with tab_valores:
+        st.header("💰 Valores TUSS — Histórico por Período")
+        st.markdown(
+            "Valores identificados nos arquivos de repasse, agregados por **convênio**, "
+            "**código TUSS** e **mês/ano**. Esses dados são usados para estimar valores de "
+            "procedimentos ausentes e serão persistidos no banco na próxima carga."
+        )
+
+        csv_corr_raw_val = st.session_state.get("csv_correlacionado")
+        if not csv_corr_raw_val:
+            st.info("⬅️ Execute a correlação na aba **🔀 Correlação** primeiro para visualizar os valores TUSS.")
+        else:
+            try:
+                from io import StringIO as _StringIO
+
+                _csv_limpo_val = extrair_csv_do_texto(csv_corr_raw_val)
+                _csv_dados_val, _ = separar_resumo_do_csv(_csv_limpo_val)
+                _df_val = texto_para_dataframe(_csv_dados_val)
+
+                if _df_val is None or _df_val.empty:
+                    st.warning("Não foi possível carregar os dados de correlação.")
+                else:
+                    # ── Gera/atualiza tuss_valores.csv se necessário ───────────
+                    try:
+                        _gerar_valores_tuss(_df_val)
+                        _carregar_valores_tuss.clear()
+                    except Exception as _e_gv:
+                        logger.warning(f"Valores TUSS: erro ao gerar CSV local: {_e_gv}")
+
+                    # ── Reconstrói DataFrame de valores por mes/ano ────────────
+                    import unicodedata as _ud_val
+
+                    def _norm_conv_val(s):
+                        s = str(s).strip().upper()
+                        s = _ud_val.normalize("NFD", s)
+                        s = "".join(c for c in s if _ud_val.category(c) != "Mn")
+                        return s
+
+                    _df_rep_val = _df_val.copy()
+                    _df_rep_val["_cod"]  = (
+                        _df_rep_val.get("CodigoTUSS_REPASSE", pd.Series(dtype=str))
+                        .astype(str).str.replace(".0", "", regex=False).str.strip()
+                    )
+                    _df_rep_val["_val"]  = pd.to_numeric(
+                        _df_rep_val.get("ValorLiberado_REPASSE", pd.Series(dtype=float)), errors="coerce"
+                    )
+                    _df_rep_val["_data"] = pd.to_datetime(
+                        _df_rep_val.get("Data_REPASSE", pd.Series(dtype=str)), dayfirst=True, errors="coerce"
+                    )
+                    _df_rep_val["_conv"] = (
+                        _df_rep_val.get("Convenio_PRODUCAO", pd.Series(dtype=str))
+                        .astype(str).apply(_norm_conv_val)
+                    )
+                    _df_rep_val["_desc"] = _df_rep_val.get("Procedimento_REPASSE", pd.Series(dtype=str)).astype(str)
+
+                    _mask_val = (
+                        _df_rep_val["_val"] > 0
+                        & _df_rep_val["_cod"].str.match(r"^\d+$", na=False)
+                        & _df_rep_val["_data"].notna()
+                    )
+                    _df_valido = _df_rep_val[_mask_val].copy()
+                    _df_valido["_mes"] = _df_valido["_data"].dt.month
+                    _df_valido["_ano"] = _df_valido["_data"].dt.year
+
+                    if _df_valido.empty:
+                        st.info("Nenhum valor de repasse encontrado nos dados de correlação.")
+                    else:
+                        # ── Agrupa por (mes, ano, convenio, codigo) ────────────
+                        _df_sorted = _df_valido.sort_values("_data")
+                        _linhas_exib = []
+                        for (_mes, _ano, _conv, _cod), _grp in _df_sorted.groupby(
+                            ["_mes", "_ano", "_conv", "_cod"]
+                        ):
+                            if _conv in ("NAN", ""):
+                                continue
+                            _sub   = _grp["_val"]
+                            _ult   = _grp.iloc[-1]
+                            _desc  = (
+                                _grp["_desc"]
+                                .dropna()
+                                .replace("nan", pd.NA)
+                                .dropna()
+                                .mode()
+                            )
+                            _linhas_exib.append({
+                                "Mês/Ano":       f"{str(_mes).zfill(2)}/{_ano}",
+                                "Mês":           int(_mes),
+                                "Ano":           int(_ano),
+                                "Convênio":      _conv,
+                                "Código TUSS":   _cod,
+                                "Descrição":     _desc.iloc[0] if len(_desc) > 0 else "",
+                                "Ocorrências":   len(_sub),
+                                "Valor Médio":   round(float(_sub.mean()), 2),
+                                "Último Valor":  round(float(_ult["_val"]), 2),
+                                "Data Último":   _ult["_data"].strftime("%d/%m/%Y"),
+                            })
+
+                        _df_exib = pd.DataFrame(_linhas_exib)
+
+                        # ── Filtros ────────────────────────────────────────────
+                        _col_f1, _col_f2, _col_f3 = st.columns([2, 2, 1])
+                        with _col_f1:
+                            _conv_opts = ["Todos"] + sorted(_df_exib["Convênio"].unique().tolist())
+                            _conv_sel  = st.selectbox("Convênio", _conv_opts, key="vt_conv")
+                        with _col_f2:
+                            _cod_opts  = ["Todos"] + sorted(_df_exib["Código TUSS"].unique().tolist())
+                            _cod_sel   = st.selectbox("Código TUSS", _cod_opts, key="vt_cod")
+                        with _col_f3:
+                            _per_opts  = ["Todos"] + sorted(
+                                _df_exib["Mês/Ano"].unique().tolist(),
+                                key=lambda x: (int(x.split("/")[1]), int(x.split("/")[0])),
+                                reverse=True,
+                            )
+                            _per_sel   = st.selectbox("Período", _per_opts, key="vt_per")
+
+                        _mask_exib = pd.Series([True] * len(_df_exib), index=_df_exib.index)
+                        if _conv_sel != "Todos":
+                            _mask_exib &= _df_exib["Convênio"] == _conv_sel
+                        if _cod_sel != "Todos":
+                            _mask_exib &= _df_exib["Código TUSS"] == _cod_sel
+                        if _per_sel != "Todos":
+                            _mask_exib &= _df_exib["Mês/Ano"] == _per_sel
+
+                        _df_filtrado = _df_exib[_mask_exib].drop(columns=["Mês", "Ano"])
+
+                        st.caption(
+                            f"{len(_df_filtrado):,} registro{'s' if len(_df_filtrado) != 1 else ''} exibido{'s' if len(_df_filtrado) != 1 else ''}"
+                            + (f" de {len(_df_exib):,}" if len(_df_filtrado) < len(_df_exib) else "")
+                        )
+
+                        st.dataframe(
+                            _df_filtrado,
+                            use_container_width=True,
+                            hide_index=True,
+                            column_config={
+                                "Valor Médio":  st.column_config.NumberColumn("Valor Médio",  format="R$ %.2f"),
+                                "Último Valor": st.column_config.NumberColumn("Último Valor", format="R$ %.2f"),
+                                "Ocorrências":  st.column_config.NumberColumn("Ocorrências"),
+                            },
+                        )
+
+                        # ── Download ───────────────────────────────────────────
+                        _csv_vt = _df_filtrado.to_csv(index=False, encoding="utf-8-sig")
+                        st.download_button(
+                            label="⬇️ Download CSV",
+                            data=_csv_vt.encode("utf-8-sig"),
+                            file_name=f"valores_tuss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv",
+                        )
+
+            except Exception as _e_tab_val:
+                st.error(f"Erro ao carregar aba Valores TUSS: {_e_tab_val}")
+                logger.error(f"Aba Valores TUSS: {_e_tab_val}", exc_info=True)
 
     # ── TAB 4: CORRELAÇÃO ─────────────────────────────────────────────────────
     with tab4:
@@ -5512,21 +5668,84 @@ def main():
                                     _row["lote_processamento"] = lote_novo
                                     records.append(_row)
 
+                                # ── Prepara registros de valores_tuss ────────────────
+                                import unicodedata as _ud_load
+
+                                def _norm_conv_load(s):
+                                    s = str(s).strip().upper()
+                                    s = _ud_load.normalize("NFD", s)
+                                    return "".join(c for c in s if _ud_load.category(c) != "Mn")
+
+                                _df_rep_load = df_metrics.copy()
+                                _df_rep_load["_cod"]  = (
+                                    _df_rep_load.get("CodigoTUSS_REPASSE", pd.Series(dtype=str))
+                                    .astype(str).str.replace(".0", "", regex=False).str.strip()
+                                )
+                                _df_rep_load["_val"]  = pd.to_numeric(
+                                    _df_rep_load.get("ValorLiberado_REPASSE", pd.Series(dtype=float)), errors="coerce"
+                                )
+                                _df_rep_load["_data"] = pd.to_datetime(
+                                    _df_rep_load.get("Data_REPASSE", pd.Series(dtype=str)), dayfirst=True, errors="coerce"
+                                )
+                                _df_rep_load["_conv"] = (
+                                    _df_rep_load.get("Convenio_PRODUCAO", pd.Series(dtype=str))
+                                    .astype(str).apply(_norm_conv_load)
+                                )
+                                _df_rep_load["_desc"] = _df_rep_load.get("Procedimento_REPASSE", pd.Series(dtype=str)).astype(str)
+
+                                _mask_load = (
+                                    (_df_rep_load["_val"] > 0)
+                                    & _df_rep_load["_cod"].str.match(r"^\d+$", na=False)
+                                    & _df_rep_load["_data"].notna()
+                                )
+                                _df_vt_load = _df_rep_load[_mask_load].copy()
+                                _df_vt_load["_mes"] = _df_vt_load["_data"].dt.month
+                                _df_vt_load["_ano"] = _df_vt_load["_data"].dt.year
+
+                                records_vt = []
+                                if not _df_vt_load.empty:
+                                    _df_vt_sorted = _df_vt_load.sort_values("_data")
+                                    for (_mes, _ano, _conv, _cod), _grp in _df_vt_sorted.groupby(
+                                        ["_mes", "_ano", "_conv", "_cod"]
+                                    ):
+                                        if _conv in ("NAN", ""):
+                                            continue
+                                        _sub  = _grp["_val"]
+                                        _ult  = _grp.iloc[-1]
+                                        _desc_mode = (
+                                            _grp["_desc"].dropna()
+                                            .replace("nan", pd.NA).dropna()
+                                            .mode()
+                                        )
+                                        records_vt.append({
+                                            "lote_processamento": lote_novo,
+                                            "Ano":          int(_ano),
+                                            "Mes":          int(_mes),
+                                            "Convenio":     _conv,
+                                            "CodigoTUSS":   _cod,
+                                            "Descricao":    _desc_mode.iloc[0] if len(_desc_mode) > 0 else None,
+                                            "Qtd":          int(len(_sub)),
+                                            "Media":        round(float(_sub.mean()), 2),
+                                            "UltimoValor":  round(float(_ult["_val"]), 2),
+                                            "DataUltimo":   _ult["_data"].strftime("%Y-%m-%d"),
+                                            # hash_conteudo preenchido pelo trigger BEFORE INSERT
+                                        })
+
                                 # ── 1. Registra lote como "iniciado" em lotes_carga ──
-                                # Checkpoint inicial: permite ao frontend identificar
-                                # cargas incompletas mesmo que o INSERT de dados falhe.
+                                # tipo="completo" — carrega correlações + valores_tuss.
                                 supabase \
                                     .table("lotes_carga") \
                                     .insert({
                                         "lote_id":        lote_novo,
                                         "status":         "iniciado",
                                         "total_inserido": len(records),
+                                        "tipo":           "completo",
                                     }) \
                                     .execute()
 
                                 try:
                                     # ── 2. INSERT dados em correlacao_endoscopia ──────
-                                    with st.spinner(f"📤 Inserindo {len(records):,} registros (lote {lote_novo})..."):
+                                    with st.spinner(f"📤 Inserindo {len(records):,} correlações (lote {lote_novo})..."):
                                         _batch_size = 500
                                         _n_batches  = -(-len(records) // _batch_size)
                                         for _i in range(0, len(records), _batch_size):
@@ -5541,8 +5760,29 @@ def main():
                                                 .execute()
                                             st.progress(
                                                 (_i + len(_batch)) / len(records),
-                                                f"Inserindo lote {_i // _batch_size + 1}/{_n_batches}"
+                                                f"Correlações: lote {_i // _batch_size + 1}/{_n_batches}"
                                             )
+
+                                    # ── 2b. INSERT dados em valores_tuss ─────────────
+                                    if records_vt:
+                                        with st.spinner(f"💰 Inserindo {len(records_vt):,} valores TUSS..."):
+                                            _vt_batches = -(-len(records_vt) // _batch_size)
+                                            for _vi in range(0, len(records_vt), _batch_size):
+                                                _vt_batch = records_vt[_vi:_vi + _batch_size]
+                                                supabase \
+                                                    .table("valores_tuss") \
+                                                    .upsert(
+                                                        _vt_batch,
+                                                        on_conflict="lote_processamento,hash_conteudo",
+                                                        ignore_duplicates=True,
+                                                    ) \
+                                                    .execute()
+                                                st.progress(
+                                                    (_vi + len(_vt_batch)) / len(records_vt),
+                                                    f"Valores TUSS: lote {_vi // _batch_size + 1}/{_vt_batches}"
+                                                )
+                                    else:
+                                        st.info("ℹ️ Nenhum valor TUSS identificado para carregar.")
 
                                     # ── 3. Apura contagens reais no banco ─────────────
                                     _total_lote    = len(records)
@@ -5579,15 +5819,13 @@ def main():
                                         .execute()
 
                                     st.success(
-                                        f"✅ **{len(records):,} registros** carregados com sucesso!\n\n"
+                                        f"✅ **{len(records):,} correlações** e "
+                                        f"**{len(records_vt):,} valores TUSS** carregados com sucesso!\n\n"
                                         f"🏷️ Lote: `{lote_novo}`"
                                     )
 
                                 except Exception as _e_insert:
                                     # ── Erro durante INSERT: marca lote como "erro" ───
-                                    # Os dados parcialmente inseridos ficam no banco com
-                                    # lote_processamento = lote_novo e podem ser removidos
-                                    # pelo frontend ao invalidar/excluir este lote.
                                     try:
                                         supabase \
                                             .table("lotes_carga") \

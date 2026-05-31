@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, ClipboardCheck, FileText,
-  Settings, Stethoscope, Menu, X, LogOut, ChevronDown, Layers, Search, GitMerge,
+  Settings, Stethoscope, Menu, X, LogOut, ChevronDown, Layers, Search, GitMerge, TrendingUp,
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { ROLE_LABELS, ROLE_COLORS } from '@/lib/permissions'
@@ -17,8 +17,9 @@ const navItems = [
   { href: '/carregamentos',  label: 'Carregamentos',  icon: Layers,          permission: null               },
   { href: '/auditoria',      label: 'Auditoria',      icon: ClipboardCheck,  permission: null               },
   { href: '/faturamento',       label: 'Faturamento',       icon: FileText,   permission: 'canViewFinancial' },
-  { href: '/mapeamentos-tuss', label: 'Mapeamentos TUSS', icon: GitMerge,   permission: 'canEdit'          },
-  { href: '/configuracoes',    label: 'Configurações',    icon: Settings,   permission: 'canManageUsers'   },
+  { href: '/mapeamentos-tuss', label: 'Mapeamentos TUSS', icon: GitMerge,    permission: 'canEdit'          },
+  { href: '/valores-tuss',    label: 'Valores TUSS',     icon: TrendingUp,  permission: 'canViewFinancial' },
+  { href: '/configuracoes',   label: 'Configurações',    icon: Settings,    permission: 'canManageUsers'   },
 ] as const
 
 export function Sidebar() {
