@@ -705,6 +705,19 @@ _MAP_PRODUCAO_2026 = {
     "observação":                            "Observacao",
 }
 
+# Mapeamento para formato INSTITUTO/HOSPITAL (FEV/MAR/ABR 2024) — schema enxuto
+# vindo do sistema do hospital: sem Nº atendimento, convênio, médico ou adicionais.
+# "INSTITUTO" é constante ("Hospital São Camilo Ipiranga") e não tem equivalente
+# no modelo PRODUCAO 2025, portanto é deliberadamente descartado (não mapeado).
+_MAP_PRODUCAO_INSTITUTO = {
+    "data aprovacao":   "Data",
+    "data aprovação":   "Data",
+    "tipo admissao":    "Origem",
+    "tipo admissão":    "Origem",
+    "nome paciente":    "Paciente",
+    "nome exame":       "Procedimento",
+}
+
 _MAP_REPASSE = {
     "ds estabelecimento": "Estabelecimento",
     "cnpj estabelecimento": "CNPJ",
@@ -762,7 +775,12 @@ def _detectar_formato_producao(df: pd.DataFrame, nome_aba: str = "") -> str:
     """
     colunas_norm = [_normalizar_coluna(col) for col in df.columns]
     aba_upper = nome_aba.upper()
-    
+
+    # Formato INSTITUTO/HOSPITAL (FEV/MAR/ABR 2024): DATA APROVACAO / NOME EXAME / INSTITUTO
+    if "nome exame" in colunas_norm or "data aprovacao" in colunas_norm \
+       or "data aprovação" in colunas_norm or "instituto" in colunas_norm:
+        return "INSTITUTO"
+
     # Formato 2025 LEGADO: tem "EXAME REALIZADO 1" e "EXAME REALIZADO 2"
     if "exame realizado 1" in colunas_norm or "exame realizado 2" in colunas_norm:
         return "2025_LEGADO"
@@ -978,8 +996,15 @@ def _detectar_cabecalho_producao(linhas: list[str]) -> tuple[str, int]:
         if "QTD" in campos[0].upper() and "DATA" in upper:
             return "COM_QTD", idx
 
-        # Cabeçalho 2025 sem QTD — começa com DATA
-        if campos[0].strip().upper() in ("DATA",) and "NOME DO PACIENTE" in upper:
+        # Cabeçalho formato INSTITUTO/HOSPITAL (FEV/MAR/ABR 2024)
+        if "DATA APROVACAO" in upper or "DATA APROVAÇÃO" in upper \
+           or ("NOME EXAME" in upper and "INSTITUTO" in upper):
+            return "INSTITUTO", idx
+
+        # Cabeçalho da equipe (2025 NOVO / legado) — identificado por NOME DO PACIENTE.
+        # Robusto a coluna líder deslocada (ex.: "Volumetria" ou coluna em branco
+        # nas abas SETEMBRO/NOVEMBRO 2024); o realinhamento é feito por nome.
+        if "NOME DO PACIENTE" in upper and "DATA" in upper:
             return "SEM_QTD", idx
 
     return "SEM_HEADER", 0
@@ -1041,12 +1066,14 @@ def _processar_aba_producao(df: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
         mapa = _MAP_PRODUCAO
     elif formato == "2025_NOVO":
         mapa = _MAP_PRODUCAO_2025_NOVO
+    elif formato == "INSTITUTO":
+        mapa = _MAP_PRODUCAO_INSTITUTO
     else:  # 2026
         mapa = _MAP_PRODUCAO_2026
-    
-    # CORREÇÃO: Remove primeira coluna se for Unnamed e formato não é 2026
+
+    # CORREÇÃO: Remove primeira coluna se for Unnamed e formato não é 2026/INSTITUTO
     # Isso acontece quando pandas lê cabeçalho sem QTD mas dados têm coluna extra
-    if formato != "2026" and len(df.columns) > 0:
+    if formato not in ("2026", "INSTITUTO") and len(df.columns) > 0:
         primeira_col = str(df.columns[0]).lower()
         if "unnamed" in primeira_col or primeira_col.strip() in ("", "nan"):
             df = df.iloc[:, 1:]  # Remove primeira coluna
@@ -1065,6 +1092,21 @@ def _processar_aba_producao(df: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
                 "ProcedimentosAdicionais"):
         if col not in df.columns:
             df[col] = ""
+
+    # Folding: colunas extras "... PROCEDIMENTOS ADICIONAIS - 2" (ex.: JULHO 2024)
+    # são concatenadas em ProcedimentosAdicionais para fluir no desmembramento.
+    extras_adic = [c for c in df.columns
+                   if "adicionais - 2" in _normalizar_coluna(str(c))]
+    for c in extras_adic:
+        df["ProcedimentosAdicionais"] = df.apply(
+            lambda r, c=c: " + ".join(
+                p for p in (str(r.get("ProcedimentosAdicionais", "")).strip(),
+                            str(r.get(c, "")).strip())
+                if p and p.lower() not in ("nan", "none")
+            ),
+            axis=1,
+        )
+    df.drop(columns=extras_adic, inplace=True, errors="ignore")
 
     # Normaliza QTD
     df["QTD"] = df["QTD"].apply(
@@ -1088,6 +1130,10 @@ def _processar_aba_producao(df: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
     )
     df["Procedimento"] = df["Procedimento"].apply(
         lambda v: str(v).strip().upper() if str(v).strip() not in ("", "-", "nan") else ""
+    )
+    # Normaliza vocabulário de Origem (formato INSTITUTO usa INTERNACAO em vez de INTERNADO)
+    df["Origem"] = df["Origem"].apply(
+        lambda v: "INTERNADO" if str(v).strip().upper() in ("INTERNACAO", "INTERNAÇÃO") else v
     )
 
     linhas_saida = []
@@ -1116,10 +1162,18 @@ def _processar_aba_producao(df: pd.DataFrame, nome_aba: str) -> pd.DataFrame:
 
     df_saida = pd.DataFrame(linhas_saida)
     df_saida.drop(columns=["Procedimento2"], inplace=True, errors="ignore")
-    # Remove colunas lixo: Extra_N e duplicatas pandas (sufixo .1, .2, ...)
-    lixo = [c for c in df_saida.columns
-            if re.match(r"^Extra_\d+$", str(c)) or re.search(r"\.\d+$", str(c))]
-    df_saida.drop(columns=lixo, inplace=True, errors="ignore")
+    # Reindex para o formato canônico (idêntico ao 2025): descarta de uma vez
+    # colunas-lixo da LEGENDA, Unnamed: N, Volumetria, Extra_N e duplicatas (.1, .2).
+    colunas_canonicas = [
+        "QTD", "Data", "Paciente", "NrAtendimento", "Convenio", "Origem",
+        "Procedimento", "ProcedimentosAdicionais", "MedicoExecutor",
+        "LocalSetor", "Sala", "Carater", "Observacao",
+        "TipoArquivo", "AbaOrigemDados",
+    ]
+    for c in colunas_canonicas:
+        if c not in df_saida.columns:
+            df_saida[c] = ""
+    df_saida = df_saida[colunas_canonicas]
     return df_saida
 
 
@@ -1204,7 +1258,7 @@ def _processar_bloco_texto(
     # ── 3. PRODUCAO — detecta formato ────────────────────────────────────────
     formato, idx_hdr = _detectar_cabecalho_producao(linhas_validas)
 
-    if formato in ("COM_QTD", "SEM_QTD"):
+    if formato in ("COM_QTD", "SEM_QTD", "INSTITUTO"):
         # Cabeçalho explícito na linha idx_hdr; descarta linhas anteriores
         linhas_csv = linhas_validas[idx_hdr:]
         try:
